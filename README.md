@@ -92,6 +92,29 @@ curl --create-dirs -o .cursor/rules/container-use.mdc https://raw.githubusercont
 ```sh
 curl --create-dirs -o .github/copilot-instructions.md https://raw.githubusercontent.com/dagger/container-use/main/rules/agent.md
 ```
+### [Kilo Code](https://kilocode.ai/docs/features/mcp/using-mcp-in-kilo-code)
+
+`Kilo Code` allows setting MCP servers at global or project level - chose any as appropriate for your case. The video shows MCP server setting at global level.
+
+<p align='center'>
+    <img src='./_assets/kilo-code-set-mcp-server.gif' width='300' alt='container-use kilo code mcp setting'>
+</p>
+
+```json
+{
+  "mcpServers": {
+    "container-use": {
+      "command": "replace with pathname of cu",
+      "args": [
+        "stdio"
+      ],
+      "env": {},
+      "alwaysAllow": [],
+      "disabled": false
+    }
+  }
+}
+```
 
 ## Examples
 
@@ -112,6 +135,14 @@ cat ./examples/hello_world.md | claude
 ```console
 goose run -i ./examples/hello_world.md -s
 ```
+
+### Run with [Kilo Code](https://kilocode.ai/) in `vscode`
+
+Prompt as in `parallel.md` but added a sentence 'use container-use mcp'
+
+<p align='center'>
+    <img src='./_assets/run-with-kilo-code.gif' width='300' alt='container-use kilo code'>
+</p>
 
 ## Watching your agents work
 
