@@ -35,6 +35,15 @@ It's an open-source MCP server that works as a CLI tool with Claude Code, Cursor
 
 ## Install
 
+First install [Docker](https://docs.docker.com/get-started/get-docker/), then clone this repository:
+
+```sh
+git clone https://github.com/dagger/container-use.git
+cd container-use
+```
+
+Build the project:
+
 ```sh
 make
 ```
