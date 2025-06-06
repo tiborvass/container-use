@@ -97,7 +97,7 @@ curl --create-dirs -o .github/copilot-instructions.md https://raw.githubusercont
 `Kilo Code` allows setting MCP servers at global or project level - chose any as appropriate for your case. The video shows MCP server setting at global level.
 
 <p align='center'>
-    <img src='./_assets/kilo-code-set-mcp-server.gif' width='700' alt='container-use kilo code mcp setting'>
+    <img src='./_assets/kilo-code-set-mcp-server.gif' width='300' alt='container-use kilo code mcp setting'>
 </p>
 
 ```json
@@ -114,6 +114,7 @@ curl --create-dirs -o .github/copilot-instructions.md https://raw.githubusercont
     }
   }
 }
+```
 
 ## Examples
 
@@ -138,7 +139,7 @@ goose run -i ./examples/hello_world.md -s
 ### Run with [Kilo Code](https://kilocode.ai/) in `vscode`
 
 <p align='center'>
-    <img src='./_assets/run-with-kilo-code-set-mcp-server.gif' width='700' alt='container-use kilo code'>
+    <img src='./_assets/run-with-kilo-code.gif' width='700' alt='container-use kilo code'>
 </p>
 
 ## Watching your agents work
