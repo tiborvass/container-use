@@ -138,6 +138,8 @@ goose run -i ./examples/hello_world.md -s
 
 ### Run with [Kilo Code](https://kilocode.ai/) in `vscode`
 
+Prompt as in `parallel.md` but added a sentence 'use container-use mcp'
+
 <p align='center'>
     <img src='./_assets/run-with-kilo-code.gif' width='300' alt='container-use kilo code'>
 </p>
