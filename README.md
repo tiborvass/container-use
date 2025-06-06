@@ -139,7 +139,7 @@ goose run -i ./examples/hello_world.md -s
 ### Run with [Kilo Code](https://kilocode.ai/) in `vscode`
 
 <p align='center'>
-    <img src='./_assets/run-with-kilo-code.gif' width='700' alt='container-use kilo code'>
+    <img src='./_assets/run-with-kilo-code.gif' width='300' alt='container-use kilo code'>
 </p>
 
 ## Watching your agents work
