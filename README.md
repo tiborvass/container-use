@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./_assets/logo.png" align="center" alt="container-use" />
+  <img src="./_assets/container-use.png" align="center" alt="Container use: Development environments for coding agents." style="max-width:300px" />
   <h2 align="center">container-use</h2>
   <p align="center">Containerized environments for coding agents. (📦🤖) (📦🤖) (📦🤖)</p>
 
