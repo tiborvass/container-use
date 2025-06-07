@@ -1,9 +1,12 @@
 all: build
 
+TARGETOS ?= linux
+TARGETARCH ?= amd64
+
 .PHONY: build
 build:
 	@which docker >/dev/null || ( echo "Please follow instructions to install Docker at https://docs.docker.com/get-started/get-docker/"; exit 1 )
-	@docker build --platform local -o . .
+	@docker build --build-arg TARGETOS=$(TARGETOS) --build-arg TARGETARCH=$(TARGETARCH) --platform local -o . .
 	@ls cu
 
 .PHONY: clean

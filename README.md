@@ -47,6 +47,9 @@ make install && hash -r
 
 The `make install` command will put `cu` in your `$PATH`. In order to use it, you will need to restart your terminal or run `hash -r` to refresh your `$PATH` (or equivalent for your shell).
 
+The build uses the platform you are on by default. If you need to cross-compile you can use the `TARGETOS` and `TARGETARCH` environment variables. For example `TARGETARCH=arm64 make` to build for Raspberry Pi
+or `TARGETOS=darwin make` to build for MacOS.
+
 ## Integrate Agents
 
 Enabling `container-use` requires 2 steps:
