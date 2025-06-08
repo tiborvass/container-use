@@ -1,9 +1,11 @@
 all: build
 
+TARGETPLATFORM ?= local
+
 .PHONY: build
 build:
 	@which docker >/dev/null || ( echo "Please follow instructions to install Docker at https://docs.docker.com/get-started/get-docker/"; exit 1 )
-	@docker build --platform local -o . .
+	@docker build --platform $(TARGETPLATFORM) -o . .
 	@ls cu
 
 .PHONY: clean
