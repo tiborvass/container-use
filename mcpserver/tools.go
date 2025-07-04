@@ -91,7 +91,14 @@ func wrapTool(tool *Tool) *Tool {
 			defer func() {
 				slog.Info("Tool finished", "tool", tool.Definition.Name)
 			}()
-			return tool.Handler(ctx, request)
+			res, err := tool.Handler(ctx, request)
+			if err != nil {
+				err = fmt.Errorf("[%s]: %w", request.Params.Name, err)
+			}
+			if res.IsError {
+				res = mcp.NewToolResultError(fmt.Sprintf("[%s]: %s", request.Params.Name, res.Content[0].(mcp.TextContent).Text))
+			}
+			return res, err
 		},
 	}
 }
