@@ -327,7 +327,7 @@ func (r *Repository) commitWorktreeChanges(ctx context.Context, worktreePath, ex
 		return err
 	}
 
-	_, err = RunGitCommand(ctx, worktreePath, "commit", "--allow-empty", "-m", explanation)
+	_, err = RunGitCommand(ctx, worktreePath, "commit", "--allow-empty", "--allow-empty-message", "-m", explanation)
 	return err
 }
 
