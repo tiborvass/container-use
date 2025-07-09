@@ -159,7 +159,7 @@ func editRulesFile(existingRules, content string) (string, error) {
 
 func tools(prefix string) []string {
 	tools := []string{}
-	for _, t := range mcpserver.Tools() {
+	for _, t := range mcpserver.Tools {
 		tools = append(tools, fmt.Sprintf("%s%s", prefix, t.Definition.Name))
 	}
 	return tools
