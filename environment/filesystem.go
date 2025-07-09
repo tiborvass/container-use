@@ -7,6 +7,9 @@ import (
 )
 
 func (env *Environment) FileRead(ctx context.Context, targetFile string, shouldReadEntireFile bool, startLineOneIndexed int, endLineOneIndexedInclusive int) (string, error) {
+	if !shouldReadEntireFile && startLineOneIndexed > endLineOneIndexedInclusive {
+		return "", fmt.Errorf("start_line_one_indexed (%d) cannot be bigger than end_line_one_indexed_inclusive (%d)", startLineOneIndexed, endLineOneIndexedInclusive)
+	}
 	file, err := env.container().File(targetFile).Contents(ctx)
 	if err != nil {
 		return "", err
@@ -25,9 +28,7 @@ func (env *Environment) FileRead(ctx context.Context, targetFile string, shouldR
 	if end >= len(lines) {
 		end = len(lines) - 1
 	}
-	if end < 0 {
-		end = 0
-	}
+	end = max(end, 0)
 	return strings.Join(lines[start:end], "\n"), nil
 }
 
