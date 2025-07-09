@@ -704,6 +704,9 @@ var EnvironmentFileGrepTool = &Tool{
 		if err != nil {
 			return mcp.NewToolResultErrorFromErr("failed to grep directory", err), nil
 		}
+		if out == "" {
+			out = "No files found matching the pattern."
+		}
 
 		return mcp.NewToolResultText(out), nil
 	},
