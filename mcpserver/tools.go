@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -59,7 +60,7 @@ type Tool struct {
 	Handler    server.ToolHandlerFunc
 }
 
-func RunStdioServer(ctx context.Context, dag *dagger.Client) error {
+func RunStdioServer(ctx context.Context, dag *dagger.Client, stdin io.Reader, stdout io.Writer) error {
 	s := server.NewMCPServer(
 		"Dagger",
 		"1.0.0",
@@ -78,7 +79,7 @@ func RunStdioServer(ctx context.Context, dag *dagger.Client) error {
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer cancel()
 
-	err := stdioSrv.Listen(ctx, os.Stdin, os.Stdout)
+	err := stdioSrv.Listen(ctx, stdin, stdout)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}

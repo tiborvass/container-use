@@ -33,7 +33,21 @@ var stdioCmd = &cobra.Command{
 		defer dag.Close()
 
 		go warmCache(ctx, dag)
-		return mcpserver.RunStdioServer(ctx, dag)
+
+		stdin, stdout := os.Stdin, os.Stdout
+		if v := os.Getenv("CU_STDIN"); v != "" {
+			stdin, err = os.Open(v)
+			if err != nil {
+				return err
+			}
+		}
+		if v := os.Getenv("CU_STDOUT"); v != "" {
+			stdout, err = os.OpenFile(v, os.O_WRONLY, 0600)
+			if err != nil {
+				return err
+			}
+		}
+		return mcpserver.RunStdioServer(ctx, dag, stdin, stdout)
 	},
 }
 
