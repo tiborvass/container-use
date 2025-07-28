@@ -1,19 +1,26 @@
-FROM node:24.1.0-slim@sha256:5ae787590295f944e7dc200bf54861bac09bf21b5fdb4c9b97aee7781b6d95a2 AS cosmos
+ARG CLAUDE_CODE_VERSION=1.0.61
+
+FROM golang AS proxy-builder
+WORKDIR /w
+RUN --mount=target=. --mount=type=cache,target=/root/.cache/go-build --mount=type=cache,target=/go/pkg/mod <<-EOF
+    CGO_ENABLED=0 go build -o /container-use-proxy ./cmd/container-use-proxy
+EOF
+
+FROM node:24.1.0-slim@sha256:5ae787590295f944e7dc200bf54861bac09bf21b5fdb4c9b97aee7781b6d95a2
 RUN apt-get update && apt-get install -y ca-certificates procps && rm -rf /var/lib/apt/lists/* /tmp/*
-#RUN --mount=type=cache,target=/root/.npm
-RUN --mount=type=cache,target=/root/.npm --mount=src=inject.js,target=/inject.js --mount=src=globals.js,target=/globals.js <<-EOF
-    npm install -g @anthropic-ai/claude-code@1.0.51 acorn-loose && rm -rf /tmp/* &&
+RUN --mount=type=cache,target=/root/.npm --mount=src=environment/resources/inject.js,target=/inject.js --mount=src=environment/resources/globals.js,target=/globals.js <<-EOF
+    npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} acorn-loose && rm -rf /tmp/* &&
     f=/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js &&
     NODE_PATH=$(npm root -g) node /globals.js "$f" >> "$f" &&
     sed -E -i'' 's/(\|\|process\.env\.API_TIMEOUT_MS\|\|process\.env\.MAX_THINKING_TOKENS)\|\|process\.env\.ANTHROPIC_BASE_URL/\1/' "$f" &&
     x=$(grep -m1 -Eo ',\{([^:]+:[^,\}]+,)+initialPrompt: *[^,"]+,' "$f" | head -1 | sed -E 's/.*,initialPrompt:([^,]+),$/\1/') && sed -Ei'' 's/("No conversation found to continue".*default\.createElement\(.*\binitialPrompt: *)"",/\1'"$x"',/' "$f" &&
     cat /inject.js >> "$f"
 EOF
-RUN useradd -ms /bin/bash cosmos
 
+RUN useradd -ms /bin/bash cosmos
 USER cosmos
-COPY --chown=cosmos:cosmos container-use-proxy-linux /usr/local/bin/container-use-proxy
-#COPY --from=builder --chown=cosmos:cosmos /tmp/container-use-proxy /usr/local/bin/container-use-proxy
+#COPY --chown=cosmos:cosmos container-use-proxy-linux /usr/local/bin/container-use-proxy
+COPY --from=proxy-builder --chown=cosmos:cosmos /container-use-proxy /usr/local/bin/container-use-proxy
 # Create .claude directory for Claude's config
 RUN mkdir ~/.claude
 # Set proxy environment variable so manual Claude invocations also use the proxy
