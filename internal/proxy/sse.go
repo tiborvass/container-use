@@ -42,6 +42,7 @@ type Event struct {
 }
 
 // processSSEEvent processes raw SSE data into an Event
+// Copied from github.com/r3labs/sse.Client.processEvent
 func processSSEEvent(msg []byte, encodingBase64 bool) (*Event, error) {
 	var e Event
 

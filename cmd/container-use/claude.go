@@ -10,7 +10,7 @@ import (
 )
 
 var claudeCmd = &cobra.Command{
-	Use:   "claude [claude-args...]",
+	Use:   "claude [env]",
 	Short: "Run Claude CLI in a containerized environment",
 	Long: `Run Claude CLI inside a container with API proxy and isolated environment.
 
@@ -23,11 +23,17 @@ The Claude environment provides:
   cu claude
 
   # Resume a specific environment
-  cu claude --env myenv-123
+  cu claude glad-lark`,
 
-  # Start Claude with specific arguments
-  cu claude --model claude-3-opus-20240229`,
 	RunE: runClaude,
+
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// only suggest environments for the first positional args
+		if len(args) == 0 {
+			return suggestEnvironments(cmd, args, toComplete)
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	},
 }
 
 var (
@@ -36,15 +42,19 @@ var (
 
 func init() {
 	rootCmd.AddCommand(claudeCmd)
-	claudeCmd.Flags().StringVar(&claudeEnv, "env", "", "Resume a specific environment")
-	claudeCmd.RegisterFlagCompletionFunc("env", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return suggestEnvironments(cmd, args, toComplete)
-	})
 }
 
 func runClaude(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	claudeArgs := args
+
+	if len(args) > 0 && args[0] == "--" {
+		claudeArgs = claudeArgs[1:]
+	}
+	if len(claudeArgs) > 0 {
+		claudeEnv = claudeArgs[0]
+		claudeArgs = claudeArgs[1:]
+	}
 
 	var envID string
 	if claudeEnv != "" {
