@@ -28,6 +28,9 @@ type Environment struct {
 	Services []*Service
 	Notes    Notes
 
+	// Docker backend for Claude environments
+	dockerBackend *DockerBackend
+
 	mu sync.RWMutex
 }
 
