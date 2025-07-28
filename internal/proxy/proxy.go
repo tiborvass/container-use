@@ -22,7 +22,6 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/dagger/container-use/internal/ctxio"
-	"github.com/dagger/container-use/internal/utils"
 	"github.com/r3labs/sse"
 )
 
@@ -213,16 +212,27 @@ func (s *Server) processSSEStream(body io.ReadCloser) {
 	msg := new(anthropic.Message)
 
 	encodingBase64 := false
-	
+
 	for {
 		p, err := eventReader.ReadEvent()
 		if err != nil {
+			logger.Println("\n\n[ERROR] processSSEStream ReadEvent:", err)
 			return
 		}
-		event := utils.M2(processSSEEvent(p, encodingBase64))
+		event, err := processSSEEvent(p, encodingBase64)
+		if err != nil {
+			logger.Println("\n\n[ERROR] processSSEEvent:", err)
+			return
+		}
 		var ev anthropic.MessageStreamEventUnion
-		utils.M(json.Unmarshal(event.Data, &ev))
-		utils.M(msg.Accumulate(ev))
+		if err := json.Unmarshal(event.Data, &ev); err != nil {
+			logger.Println("\n\n[ERROR] processSSEStream unmarshal:", err)
+			return
+		}
+		if err := msg.Accumulate(ev); err != nil {
+			logger.Println("\n\n[ERROR] processSSEStream accumulate:", err)
+			return
+		}
 		if _, ok := ev.AsAny().(anthropic.MessageStopEvent); ok {
 			logger.Println("\n\n===MESSAGE COMPLETE===", msg)
 			s.handleMessageComplete(msg)

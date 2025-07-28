@@ -356,7 +356,7 @@ func (env *Environment) copyClaudeConfig(ctx context.Context) error {
 	f.Close()
 
 	if debug {
-		slog.Debug("TOTO:", buf.String())
+		slog.Debug("generated .claude.json:", buf.String())
 	}
 	containerID := env.dockerBackend.containerID
 	cmd := exec.CommandContext(ctx, "docker", "cp", genClaudeJSONPath, fmt.Sprintf("%s:/home/cosmos/.claude.json", containerID))
