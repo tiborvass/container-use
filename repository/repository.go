@@ -9,53 +9,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/dagger/container-use/environment"
 	petname "github.com/dustinkirkland/golang-petname"
-	"github.com/mitchellh/go-homedir"
 )
 
 const (
+	cuGlobalConfigPath = "~/.config/container-use"
+	cuRepoPath         = cuGlobalConfigPath + "/repos"
+	cuWorktreePath     = cuGlobalConfigPath + "/worktrees"
 	containerUseRemote = "container-use"
 	gitNotesLogRef     = "container-use"
 	gitNotesStateRef   = "container-use-state"
 )
 
-// getDefaultConfigPath returns the default configuration path for the current OS
-func getDefaultConfigPath() string {
-	if runtime.GOOS == "windows" {
-		// On Windows, use APPDATA or LOCALAPPDATA
-		if appData := os.Getenv("APPDATA"); appData != "" {
-			return filepath.Join(appData, "container-use")
-		}
-		if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-			return filepath.Join(localAppData, "container-use")
-		}
-		// Fallback to home directory
-		if home, err := homedir.Dir(); err == nil {
-			return filepath.Join(home, "AppData", "Roaming", "container-use")
-		}
-		return "container-use" // Last resort fallback
-	}
-	// On Unix-like systems (Linux, macOS, etc.)
-	if home, err := homedir.Dir(); err == nil {
-		return filepath.Join(home, ".config", "container-use")
-	}
-	return "~/.config/container-use" // Fallback for compatibility
-}
-
-var (
-	cuGlobalConfigPath = getDefaultConfigPath()
-)
-
 type Repository struct {
 	userRepoPath string
 	forkRepoPath string
-	basePath     string // defaults to OS-appropriate config path if empty
+	basePath     string // defaults to ~/.config/container-use if empty
 }
 
 // getRepoPath returns the path for storing repository data
@@ -75,13 +48,6 @@ func Open(ctx context.Context, repo string) (*Repository, error) {
 // OpenWithBasePath opens a repository with a custom base path for container-use data.
 // This is useful for tests that need isolated environments.
 func OpenWithBasePath(ctx context.Context, repo string, basePath string) (*Repository, error) {
-	// Expand tilde in basePath for cross-platform compatibility
-	expandedBasePath, err := homedir.Expand(basePath)
-	if err != nil {
-		// If expansion fails, use the original path
-		expandedBasePath = basePath
-	}
-
 	output, err := RunGitCommand(ctx, repo, "rev-parse", "--show-toplevel")
 	if err != nil {
 		// Check for exit code 128 which means not a git repository
@@ -99,7 +65,7 @@ func OpenWithBasePath(ctx context.Context, repo string, basePath string) (*Repos
 			return nil, err
 		}
 		// Create a temporary repository to get the normalized fork path
-		tempRepo := &Repository{basePath: expandedBasePath}
+		tempRepo := &Repository{basePath: basePath}
 		forkRepoPath, err = tempRepo.normalizeForkPath(ctx, userRepoPath)
 		if err != nil {
 			return nil, err
@@ -109,7 +75,7 @@ func OpenWithBasePath(ctx context.Context, repo string, basePath string) (*Repos
 	r := &Repository{
 		userRepoPath: userRepoPath,
 		forkRepoPath: forkRepoPath,
-		basePath:     expandedBasePath,
+		basePath:     basePath,
 	}
 
 	if err := r.ensureFork(ctx); err != nil {
@@ -176,41 +142,15 @@ func (r *Repository) exists(ctx context.Context, id string) error {
 }
 
 // Create creates a new environment with the given description and explanation.
-// Requires a dagger client for container operations during environment initialization.
-func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description, explanation string) (*environment.Environment, error) {
+func (r *Repository) Create(ctx context.Context, _ interface{}, description, explanation string) (*environment.Environment, error) {
 	id := petname.Generate(2, "-")
 	worktree, err := r.initializeWorktree(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.createInitialCommit(ctx, worktree, id, description); err != nil {
-		return nil, fmt.Errorf("failed to create initial commit: %w", err)
-	}
-
-	worktreeHead, err := RunGitCommand(ctx, worktree, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, err
-	}
-	worktreeHead = strings.TrimSpace(worktreeHead)
-
-	baseSourceDir, err := dag.
-		Host().
-		Directory(r.forkRepoPath, dagger.HostDirectoryOpts{NoCache: true}). // bust cache for each Create call
-		AsGit().
-		Ref(worktreeHead).
-		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
-		Sync(ctx) // don't bust cache when loading from state
-	if err != nil {
-		return nil, fmt.Errorf("failed loading initial source directory: %w", err)
-	}
-
-	config := environment.DefaultConfig()
-	if err := config.Load(r.userRepoPath); err != nil {
-		return nil, err
-	}
-
-	env, err := environment.New(ctx, dag, id, description, config, baseSourceDir)
+	// Create environment without Dagger
+	env, err := environment.New(ctx, nil, id, description, worktree, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -222,10 +162,8 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 	return env, nil
 }
 
-// Get retrieves a full Environment with dagger client embedded for container operations.
-// Use this when you need to perform container operations like running commands, terminals, etc.
-// For basic metadata access without container operations, use Info() instead.
-func (r *Repository) Get(ctx context.Context, dag *dagger.Client, id string) (*environment.Environment, error) {
+// Get retrieves an Environment for container operations.
+func (r *Repository) Get(ctx context.Context, _ interface{}, id string) (*environment.Environment, error) {
 	if err := r.exists(ctx, id); err != nil {
 		return nil, err
 	}
@@ -240,7 +178,7 @@ func (r *Repository) Get(ctx context.Context, dag *dagger.Client, id string) (*e
 		return nil, err
 	}
 
-	env, err := environment.Load(ctx, dag, id, state, worktree)
+	env, err := environment.Load(ctx, nil, id, state, worktree)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +186,6 @@ func (r *Repository) Get(ctx context.Context, dag *dagger.Client, id string) (*e
 	return env, nil
 }
 
-// Info retrieves environment metadata without requiring dagger operations.
 // This is more efficient than Get() when you only need access to configuration,
 // state, and other metadata without performing container operations.
 func (r *Repository) Info(ctx context.Context, id string) (*environment.EnvironmentInfo, error) {
@@ -312,37 +249,6 @@ func (r *Repository) List(ctx context.Context) ([]*environment.EnvironmentInfo, 
 	})
 
 	return envs, nil
-}
-
-// ListDescendantEnvironments returns environments that are descendants of the given commit.
-// This filters environments to only those where the provided commit is an ancestor
-// of the environment's current HEAD. Environments are sorted by most recently updated first.
-func (r *Repository) ListDescendantEnvironments(ctx context.Context, ancestorCommit string) ([]*environment.EnvironmentInfo, error) {
-	allEnvs, err := r.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var filteredEnvs []*environment.EnvironmentInfo
-	for _, env := range allEnvs {
-		if r.isDescendantOfCommit(ctx, ancestorCommit, env.ID) {
-			filteredEnvs = append(filteredEnvs, env)
-		}
-	}
-
-	return filteredEnvs, nil
-}
-
-// isDescendantOfCommit checks if the environment is a descendant of the given commit
-// using git merge-base --is-ancestor which is the canonical way to check ancestry
-func (r *Repository) isDescendantOfCommit(ctx context.Context, ancestorCommit, envID string) bool {
-	envRef := fmt.Sprintf("container-use/%s", envID)
-
-	// Use git merge-base --is-ancestor to check if ancestorCommit is an ancestor of envRef
-	// This returns exit code 0 if ancestorCommit is an ancestor of envRef
-	_, err := RunGitCommand(ctx, r.userRepoPath, "merge-base", "--is-ancestor", ancestorCommit, envRef)
-
-	return err == nil
 }
 
 // Update saves the provided environment to the repository.
