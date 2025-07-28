@@ -48,6 +48,12 @@ func New(ctx context.Context, dag *dagger.Client, id, title string, config *Envi
 		dag: dag,
 	}
 
+	// For Docker backend (nil dagger), skip container building
+	if dag == nil {
+		env.dockerBackend = &DockerBackend{}
+		return env, nil
+	}
+
 	container, err := env.buildBase(ctx, initialSourceDir)
 	if err != nil {
 		return nil, err
@@ -394,4 +400,9 @@ func (env *Environment) Terminal(ctx context.Context) error {
 
 func (env *Environment) Checkpoint(ctx context.Context, target string) (string, error) {
 	return env.container().Publish(ctx, target)
+}
+
+// IsDockerBackend returns true if this environment uses Docker backend instead of Dagger
+func (env *Environment) IsDockerBackend() bool {
+	return env.dag == nil
 }
