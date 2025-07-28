@@ -166,7 +166,7 @@ func (env *Environment) startManagerServer(ctx context.Context) (string, error) 
 }
 
 func (env *Environment) waitForProxyConnection(ctx context.Context) error {
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 150; i++ {
 		env.mu.RLock()
 		connected := env.dockerBackend != nil && env.dockerBackend.proxyManager != nil
 		env.mu.RUnlock()
@@ -176,7 +176,7 @@ func (env *Environment) waitForProxyConnection(ctx context.Context) error {
 			return nil
 		}
 
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("proxy failed to connect after 15 seconds")
 }
@@ -295,25 +295,7 @@ func (env *Environment) copyClaudeConfig(ctx context.Context) error {
 		return err
 	}
 
-	var project = map[string]any{
-		cwd: map[string]any{
-			// claude code needs these keys to not be `null`
-			"allowedTools":           []any{},
-			"history":                []any{},
-			"mcpContextUris":         []any{},
-			"mcpServers":             struct{}{},
-			"enabledMcpjsonServers":  []any{},
-			"disabledMcpjsonServers": []any{},
-			// auto-trust the managed git worktree
-			"hasTrustDialogAccepted": true,
-		},
-	}
-
-	p, err := json.Marshal(project)
-	if err != nil {
-		return err
-	}
-
+	workdir := env.State.Config.Workdir
 	config := map[string]any{}
 
 	claudeJSONPath := filepath.Join(homeDir, ".claude.json")
@@ -330,12 +312,36 @@ func (env *Environment) copyClaudeConfig(ctx context.Context) error {
 		return err
 	}
 
-	// discard all the other projects
-	projects := map[string]any{}
-	if err := json.Unmarshal(p, &projects); err != nil {
-		return err
+	projects, ok := config["projects"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("expected \"projects\" field of %q to be an object", claudeJSONPath)
 	}
-	config["projects"] = projects
+	if len(projects) == 0 {
+		projects = map[string]any{}
+	}
+	if _, ok := projects[cwd]; !ok {
+		projects[cwd] = map[string]any{}
+	}
+	project, ok := projects[cwd].(map[string]any)
+	if !ok {
+		return fmt.Errorf("expected projects[%q] field of %q to be an object", workdir, claudeJSONPath)
+	}
+	if len(project) == 0 {
+		project = map[string]any{
+			// claude code needs these keys to not be `null`
+			"allowedTools":           []any{},
+			"history":                []any{},
+			"mcpContextUris":         []any{},
+			"mcpServers":             struct{}{},
+			"enabledMcpjsonServers":  []any{},
+			"disabledMcpjsonServers": []any{},
+			// auto-trust the managed git worktree
+			"hasTrustDialogAccepted": true,
+		}
+	}
+	config["projects"] = map[string]any{
+		workdir: project,
+	}
 
 	f.Close()
 	f, err = os.Create(genClaudeJSONPath)
