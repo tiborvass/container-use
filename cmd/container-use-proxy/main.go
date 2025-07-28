@@ -36,7 +36,7 @@ func main() {
 	defer proxyServer.Shutdown(ctx)
 
 	// Run Claude
-	claudeArgs := []string{"claude"}
+	claudeArgs := []string{"claude", "--dangerously-skip-permissions"}
 
 	// Check for CLAUDE_ARGS environment variable (used when resuming)
 	if envArgs := os.Getenv("CLAUDE_ARGS"); envArgs != "" {
@@ -57,6 +57,6 @@ func main() {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			os.Exit(exitErr.ExitCode())
 		}
-		log.Fatalf("Claude failed: %v", err)
+		log.Fatalf("Running claude code failed: %v", err)
 	}
 }

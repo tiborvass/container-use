@@ -1,9 +1,12 @@
 package environment
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -13,6 +16,8 @@ import (
 	"strings"
 	"time"
 )
+
+const debug = false
 
 // DockerBackend provides Docker-based environment operations
 type DockerBackend struct {
@@ -71,13 +76,18 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 		return fmt.Errorf("failed to start manager server: %w", err)
 	}
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
 	// Build docker run command
 	args := []string{
 		"run", "-d", "-it",
 		"--name", containerName,
 		"-h", containerName,
-		"-w", env.State.Config.Workdir,
-		"-v", fmt.Sprintf("%s:%s", worktree, env.State.Config.Workdir),
+		"-w", cwd,
+		"-v", fmt.Sprintf("%s:%s", worktree, cwd),
 		"-e", "CU_ENVIRONMENT_ID=" + env.ID,
 		"-e", "MANAGER_ADDR=" + managerAddr,
 	}
@@ -87,7 +97,8 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 		args = append(args, "-e", envVar)
 	}
 
-	// Add secrets
+	// Add secrets as envvars.
+	// TODO: use --env-file with pipe
 	for _, secret := range env.State.Config.Secrets {
 		k, v, _ := strings.Cut(secret, "=")
 		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
@@ -95,6 +106,8 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 
 	// Handle Claude auth
 	args = setupClaudeAuth(args)
+
+	// TODO: cp ~/.claude/projects/$PROJECT into container. What about TODOS?
 
 	// Use the Claude image
 	args = append(args, "tiborvass/claude-code")
@@ -177,8 +190,11 @@ func (env *Environment) handleProxyMessages(ctx context.Context) {
 			Data   json.RawMessage `json:"Data"`
 		}
 
-		if err := dec.Decode(&msg); err != nil {
-			slog.Error("Failed to decode proxy message", "error", err)
+		err := dec.Decode(&msg)
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				slog.Error("Failed to decode proxy message", "error", err)
+			}
 			return
 		}
 
@@ -262,7 +278,7 @@ func setupClaudeAuth(args []string) []string {
 	credentialsFile := filepath.Join(claudeDir, ".credentials.json")
 
 	if _, err := os.Stat(credentialsFile); err == nil {
-		args = append(args, "-v", fmt.Sprintf("%s:/home/cosmos/.claude", claudeDir))
+		args = append(args, "-v", fmt.Sprintf("%s:/home/cosmos/.claude/.credentials.json", credentialsFile))
 	}
 
 	return args
@@ -274,13 +290,75 @@ func (env *Environment) copyClaudeConfig(ctx context.Context) error {
 		return err
 	}
 
-	claudeJSON := filepath.Join(homeDir, ".claude.json")
-	if _, err := os.Stat(claudeJSON); err != nil {
-		return nil // No config to copy
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
 	}
 
-	// Copy using docker cp
+	var project = map[string]any{
+		cwd: map[string]any{
+			// claude code needs these keys to not be `null`
+			"allowedTools":           []any{},
+			"history":                []any{},
+			"mcpContextUris":         []any{},
+			"mcpServers":             struct{}{},
+			"enabledMcpjsonServers":  []any{},
+			"disabledMcpjsonServers": []any{},
+			// auto-trust the managed git worktree
+			"hasTrustDialogAccepted": true,
+		},
+	}
+
+	p, err := json.Marshal(project)
+	if err != nil {
+		return err
+	}
+
+	config := map[string]any{}
+
+	claudeJSONPath := filepath.Join(homeDir, ".claude.json")
+	genClaudeJSONPath := filepath.Join(os.TempDir(), fmt.Sprintf("cu-%s-claude.json", env.ID))
+
+	f, err := os.Open(claudeJSONPath)
+	if err == nil {
+		d := json.NewDecoder(f)
+		defer f.Close()
+		if err := d.Decode(&config); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	// discard all the other projects
+	projects := map[string]any{}
+	if err := json.Unmarshal(p, &projects); err != nil {
+		return err
+	}
+	config["projects"] = projects
+
+	f.Close()
+	f, err = os.Create(genClaudeJSONPath)
+	if err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	var w io.Writer = f
+	if debug {
+		w = io.MultiWriter(&buf, f)
+	}
+	e := json.NewEncoder(w)
+	e.SetIndent("", "  ")
+	if err := e.Encode(config); err != nil {
+		return err
+	}
+	f.Close()
+
+	if debug {
+		slog.Debug("TOTO:", buf.String())
+	}
 	containerID := env.dockerBackend.containerID
-	cmd := exec.CommandContext(ctx, "docker", "cp", claudeJSON, fmt.Sprintf("%s:/home/cosmos/.claude.json", containerID))
+	cmd := exec.CommandContext(ctx, "docker", "cp", genClaudeJSONPath, fmt.Sprintf("%s:/home/cosmos/.claude.json", containerID))
 	return cmd.Run()
 }
