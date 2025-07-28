@@ -52,9 +52,6 @@ func NewReaderFanOut(ctx context.Context, r io.Reader, n int) *ReaderFanOut {
 
 	m.close = func(err error) error {
 		once.Do(func() {
-			if err != nil {
-				println("TOTO", err.Error())
-			}
 			defer cancel()
 			for _, pw := range pws {
 				pw.CloseWithError(err)
