@@ -150,7 +150,9 @@ func (r *Repository) Create(ctx context.Context, _ interface{}, description, exp
 	}
 
 	// Create environment without Dagger
-	env, err := environment.New(ctx, nil, id, description, worktree, nil)
+	config := environment.DefaultConfig()
+	config.Workdir = worktree
+	env, err := environment.New(ctx, nil, id, description, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +251,40 @@ func (r *Repository) List(ctx context.Context) ([]*environment.EnvironmentInfo, 
 	})
 
 	return envs, nil
+}
+
+// ListDescendantEnvironments returns environments that are descendants of the given commit
+func (r *Repository) ListDescendantEnvironments(ctx context.Context, baseCommit string) ([]*environment.EnvironmentInfo, error) {
+	allEnvs, err := r.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var filteredEnvs []*environment.EnvironmentInfo
+	for _, env := range allEnvs {
+		// Check if this environment's branch contains the base commit
+		_, err := RunGitCommand(ctx, r.userRepoPath, "merge-base", "--is-ancestor", baseCommit, fmt.Sprintf("%s/%s", containerUseRemote, env.ID))
+		if err == nil {
+			// Exit code 0 means baseCommit is an ancestor
+			filteredEnvs = append(filteredEnvs, env)
+		} else {
+			// Check the actual error - non-zero exit just means it's not an ancestor
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+				// Not an ancestor, skip
+				continue
+			} else {
+				// Real error
+				slog.Debug("Error checking ancestry", "env", env.ID, "error", err)
+			}
+		}
+	}
+
+	// Sort by update time (most recent first)
+	sort.Slice(filteredEnvs, func(i, j int) bool {
+		return filteredEnvs[i].State.UpdatedAt.After(filteredEnvs[j].State.UpdatedAt)
+	})
+
+	return filteredEnvs, nil
 }
 
 // Update saves the provided environment to the repository.

@@ -15,6 +15,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -232,12 +233,18 @@ func (s *Server) processSSEStream(body io.ReadCloser) {
 
 func (s *Server) handleMessageComplete(msg *anthropic.Message) {
 	// Track tool uses
-	var toolUseID string
+	var toolUses []struct {
+		ID   string
+		Name string
+	}
 	for _, content := range msg.Content {
 		if content.Type == "tool_use" {
-			toolUseID = content.ID
-			s.toolsQueue.Add(toolUseID)
-			logger.Printf("Tool use detected: %s", toolUseID)
+			s.toolsQueue.Add(content.ID)
+			toolUses = append(toolUses, struct {
+				ID   string
+				Name string
+			}{content.ID, content.Name})
+			logger.Printf("Tool use detected: %s (%s)", content.ID, content.Name)
 		}
 	}
 
@@ -247,8 +254,20 @@ func (s *Server) handleMessageComplete(msg *anthropic.Message) {
 		logger.Println("acquiring commit lock")
 		s.toolsQueue.mu.Lock()
 		if len(s.toolsQueue.s) > 0 {
-			// TODO: find summary of what was done, or make the commits per tool use
-			s.sendCommit(toolUseID)
+			// Create descriptive commit message
+			var message string
+			if len(toolUses) == 1 {
+				message = fmt.Sprintf("Tool: %s", toolUses[0].Name)
+			} else if len(toolUses) > 1 {
+				toolNames := make([]string, len(toolUses))
+				for i, tu := range toolUses {
+					toolNames[i] = tu.Name
+				}
+				message = fmt.Sprintf("Tools: %s", strings.Join(toolNames, ", "))
+			} else {
+				message = "Claude response"
+			}
+			s.sendCommit(message)
 		}
 		logger.Println("committing", s.toolsQueue.s)
 		s.toolsQueue.s = map[string]struct{}{}
