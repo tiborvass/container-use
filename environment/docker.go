@@ -38,7 +38,7 @@ func (env *Environment) StartDockerSession(ctx context.Context, worktree string,
 
 func (env *Environment) ensureDockerContainer(ctx context.Context, worktree string) error {
 	backend := env.dockerBackend
-	
+
 	if backend.containerID != "" {
 		// Check if container still exists and is running
 		cmd := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Running}}", backend.containerID)
@@ -60,12 +60,7 @@ func (env *Environment) ensureDockerContainer(ctx context.Context, worktree stri
 
 func (env *Environment) createDockerContainer(ctx context.Context, worktree string) error {
 	backend := env.dockerBackend
-	
-	// Ensure Claude image is built
-	if err := EnsureClaudeImage(ctx); err != nil {
-		return fmt.Errorf("failed to ensure Claude image: %w", err)
-	}
-	
+
 	// Remove any existing container with same name
 	containerName := fmt.Sprintf("cu-%s", env.ID)
 	exec.CommandContext(ctx, "docker", "rm", "-f", containerName).Run()
@@ -102,7 +97,7 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 	args = setupClaudeAuth(args)
 
 	// Use the Claude image
-	args = append(args, "container-use-claude")
+	args = append(args, "tiborvass/claude-code")
 
 	output, err := exec.CommandContext(ctx, "docker", args...).Output()
 	if err != nil {
@@ -249,7 +244,7 @@ func (env *Environment) attachToDockerContainer(ctx context.Context, claudeArgs 
 func (env *Environment) SetDockerSnapshotCallback(callback func(string) error) {
 	env.mu.Lock()
 	defer env.mu.Unlock()
-	
+
 	if env.dockerBackend == nil {
 		env.dockerBackend = &DockerBackend{}
 	}

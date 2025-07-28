@@ -37,7 +37,7 @@ func main() {
 
 	// Run Claude
 	claudeArgs := []string{"claude"}
-	
+
 	// Check for CLAUDE_ARGS environment variable (used when resuming)
 	if envArgs := os.Getenv("CLAUDE_ARGS"); envArgs != "" {
 		// Parse the environment args
@@ -46,7 +46,7 @@ func main() {
 		// Use command line args
 		claudeArgs = append(claudeArgs, os.Args[1:]...)
 	}
-	
+
 	claudeCmd := exec.CommandContext(ctx, claudeArgs[0], claudeArgs[1:]...)
 	claudeCmd.Env = append(os.Environ(), "ANTHROPIC_BASE_URL=http://localhost:8080")
 	claudeCmd.Stdin = os.Stdin

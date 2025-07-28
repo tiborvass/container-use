@@ -15,7 +15,7 @@ var claudeCmd = &cobra.Command{
 	Long: `Run Claude CLI inside a container with API proxy and isolated environment.
 
 The Claude environment provides:
-- Isolated git worktree for the environment  
+- Isolated git worktree for the environment
 - API proxy for monitoring and control
 - Automatic git commits on tool completion
 - Persistent state across sessions`,
@@ -67,7 +67,7 @@ func runClaude(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to get environment %s: %w", envID, err)
 		}
-		slog.Info("Resuming Claude environment", "id", envID)
+		slog.Info("Resuming Claude Code environment", "id", envID)
 	} else {
 		// Create new environment with Docker backend (nil dagger client)
 		env, err = repo.Create(ctx, nil, "Claude session", "Created for Claude CLI")
@@ -75,7 +75,7 @@ func runClaude(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to create environment: %w", err)
 		}
 		envID = env.ID
-		slog.Info("Created new Claude environment", "id", envID)
+		slog.Info("Created new Claude Code environment", "id", envID)
 	}
 
 	// Get worktree path
