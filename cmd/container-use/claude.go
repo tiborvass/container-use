@@ -69,18 +69,23 @@ func runClaude(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to open repository: %w", err)
 	}
 
+	dag, err := daggerConnect(ctx, logWriter)
+	if err != nil {
+		return err
+	}
+	defer dag.Close()
+
 	// For Claude, we pass nil as the dagger client to indicate Docker backend
 	var env *environment.Environment
 	if envID != "" {
 		// Get existing environment
-		env, err = repo.Get(ctx, nil, envID)
+		env, err = repo.Get(ctx, dag, envID)
 		if err != nil {
 			return fmt.Errorf("failed to get environment %s: %w", envID, err)
 		}
 		slog.Info("Resuming Claude Code environment", "id", envID)
 	} else {
-		// Create new environment with Docker backend (nil dagger client)
-		env, err = repo.Create(ctx, nil, "Claude session", "Created for Claude CLI")
+		env, err = repo.Create(ctx, dag, "Claude session", "Created for Claude CLI", true)
 		if err != nil {
 			return fmt.Errorf("failed to create environment: %w", err)
 		}

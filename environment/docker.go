@@ -29,10 +29,6 @@ type DockerBackend struct {
 
 // StartDockerSession starts a Docker-based session for Claude
 func (env *Environment) StartDockerSession(ctx context.Context, worktree string, claudeArgs []string) error {
-	if env.dockerBackend == nil {
-		env.dockerBackend = &DockerBackend{}
-	}
-
 	// Ensure container exists
 	if err := env.ensureDockerContainer(ctx, worktree); err != nil {
 		return fmt.Errorf("failed to ensure container: %w", err)
@@ -76,18 +72,15 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 		return fmt.Errorf("failed to start manager server: %w", err)
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
+	workdir := env.State.Config.Workdir
 
 	// Build docker run command
 	args := []string{
 		"run", "-d", "-it",
 		"--name", containerName,
 		"-h", containerName,
-		"-w", cwd,
-		"-v", fmt.Sprintf("%s:%s", worktree, cwd),
+		"-w", workdir,
+		"-v", fmt.Sprintf("%s:%s", worktree, workdir),
 		"-e", "CU_ENVIRONMENT_ID=" + env.ID,
 		"-e", "MANAGER_ADDR=" + managerAddr,
 	}
@@ -109,8 +102,9 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 
 	// TODO: cp ~/.claude/projects/$PROJECT into container. What about TODOS?
 
-	// Use the Claude image
-	args = append(args, "tiborvass/claude-code")
+	// Merge the Claude image
+	env.container().ExportImage(ctx, "container-use-claude")
+	args = append(args, "container-use-claude")
 
 	output, err := exec.CommandContext(ctx, "docker", args...).Output()
 	if err != nil {
