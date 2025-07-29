@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/container-use/environment"
 	petname "github.com/dustinkirkland/golang-petname"
 )
@@ -142,17 +143,45 @@ func (r *Repository) exists(ctx context.Context, id string) error {
 }
 
 // Create creates a new environment with the given description and explanation.
-func (r *Repository) Create(ctx context.Context, _ interface{}, description, explanation string) (*environment.Environment, error) {
+func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description, explanation string, cosmos bool) (*environment.Environment, error) {
 	id := petname.Generate(2, "-")
 	worktree, err := r.initializeWorktree(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create environment without Dagger
+	if err := r.createInitialCommit(ctx, worktree, id, description); err != nil {
+		return nil, fmt.Errorf("failed to create initial commit: %w", err)
+	}
+
+	var agentify func(*dagger.Container) *dagger.Container
 	config := environment.DefaultConfig()
-	config.Workdir = worktree
-	env, err := environment.New(ctx, nil, id, description, config, nil)
+	if cosmos {
+		config.Workdir = worktree
+		agentify = func(container *dagger.Container) *dagger.Container {
+			// Efficient MergeOp
+			return container.WithDirectory("/", dag.Container().From("tiborvass/claude-code:layer").Rootfs())
+		}
+	}
+
+	worktreeHead, err := RunGitCommand(ctx, worktree, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	worktreeHead = strings.TrimSpace(worktreeHead)
+
+	baseSourceDir, err := dag.
+		Host().
+		Directory(r.forkRepoPath, dagger.HostDirectoryOpts{NoCache: true}). // bust cache for each Create call
+		AsGit().
+		Ref(worktreeHead).
+		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		Sync(ctx) // don't bust cache when loading from state
+	if err != nil {
+		return nil, fmt.Errorf("failed loading initial source directory: %w", err)
+	}
+
+	env, err := environment.New(ctx, dag, id, description, config, baseSourceDir, agentify)
 	if err != nil {
 		return nil, err
 	}

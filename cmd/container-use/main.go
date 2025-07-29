@@ -4,8 +4,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 
+	"dagger.io/dagger"
 	"github.com/charmbracelet/fang"
 	"github.com/dagger/container-use/repository"
 	"github.com/spf13/cobra"
@@ -68,4 +70,15 @@ func suggestEnvironments(cmd *cobra.Command, args []string, toComplete string) (
 		ids = append(ids, e.ID)
 	}
 	return ids, cobra.ShellCompDirectiveKeepOrder
+}
+
+func daggerConnect(ctx context.Context, w io.Writer) (*dagger.Client, error) {
+	dag, err := dagger.Connect(ctx, dagger.WithLogOutput(w))
+	if err != nil {
+		if isDockerDaemonError(err) {
+			handleDockerDaemonError()
+		}
+		return nil, fmt.Errorf("failed to connect to dagger: %w", err)
+	}
+	return dag, err
 }

@@ -23,7 +23,8 @@ type EnvironmentInfo struct {
 type Environment struct {
 	*EnvironmentInfo
 
-	dag *dagger.Client
+	dag      *dagger.Client
+	agentify func(*dagger.Container) *dagger.Container
 
 	Services []*Service
 	Notes    Notes
@@ -34,7 +35,8 @@ type Environment struct {
 	mu sync.RWMutex
 }
 
-func New(ctx context.Context, dag *dagger.Client, id, title string, config *EnvironmentConfig, initialSourceDir *dagger.Directory) (*Environment, error) {
+// New returns a cosmos-ready environment if initialSourceDir == nil
+func New(ctx context.Context, dag *dagger.Client, id, title string, config *EnvironmentConfig, initialSourceDir *dagger.Directory, agentify func(*dagger.Container) *dagger.Container) (*Environment, error) {
 	env := &Environment{
 		EnvironmentInfo: &EnvironmentInfo{
 			ID: id,
@@ -45,13 +47,9 @@ func New(ctx context.Context, dag *dagger.Client, id, title string, config *Envi
 				UpdatedAt: time.Now(),
 			},
 		},
-		dag: dag,
-	}
-
-	// For Docker backend (nil dagger), skip container building
-	if dag == nil {
-		env.dockerBackend = &DockerBackend{}
-		return env, nil
+		dag:           dag,
+		agentify:      agentify,
+		dockerBackend: &DockerBackend{},
 	}
 
 	container, err := env.buildBase(ctx, initialSourceDir)
@@ -106,14 +104,14 @@ func LoadInfo(ctx context.Context, id string, state []byte, worktree string) (*E
 		return nil, err
 	}
 
-	// Backward compatibility: if there's no config in the state, load it from the worktree
-	if envInfo.State.Config == nil {
-		config := DefaultConfig()
-		if err := config.Load(worktree); err != nil {
-			return nil, err
-		}
-		envInfo.State.Config = config
+	config := envInfo.State.Config
+	if config == nil {
+		config = DefaultConfig()
 	}
+	if err := config.Load(worktree); err != nil {
+		return nil, err
+	}
+	envInfo.State.Config = config
 
 	return envInfo, nil
 }
@@ -165,6 +163,10 @@ func (env *Environment) buildBase(ctx context.Context, baseSourceDir *dagger.Dir
 		Container().
 		From(env.State.Config.BaseImage).
 		WithWorkdir(env.State.Config.Workdir)
+
+	if env.agentify != nil {
+		container = env.agentify(container)
+	}
 
 	container, err := containerWithEnvAndSecrets(env.dag, container, env.State.Config.Env, env.State.Config.Secrets)
 	if err != nil {

@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"os"
 
-	"dagger.io/dagger"
 	"github.com/dagger/container-use/mcpserver"
 	"github.com/spf13/cobra"
 )
@@ -18,14 +17,9 @@ var stdioCmd = &cobra.Command{
 
 		slog.Info("connecting to dagger")
 
-		dag, err := dagger.Connect(ctx, dagger.WithLogOutput(logWriter))
+		dag, err := daggerConnect(ctx, logWriter)
 		if err != nil {
 			slog.Error("Error starting dagger", "error", err)
-
-			if isDockerDaemonError(err) {
-				handleDockerDaemonError()
-			}
-
 			os.Exit(1)
 		}
 		defer dag.Close()

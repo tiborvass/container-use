@@ -247,7 +247,7 @@ Environment configuration is managed by the user via cu config commands.`,
 			return nil, fmt.Errorf("dagger client not found in context")
 		}
 
-		env, err := repo.Create(ctx, dag, title, request.GetString("explanation", ""))
+		env, err := repo.Create(ctx, dag, title, request.GetString("explanation", ""), false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create environment: %w", err)
 		}
