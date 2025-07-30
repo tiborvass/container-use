@@ -33,8 +33,8 @@ docker exec $CONTAINER sh -c 'echo "MANAGER_ADDR=$MANAGER_ADDR"'
 echo ""
 
 echo "=== CREDENTIALS CHECK ==="
-docker exec $CONTAINER sh -c 'ls -la /home/cosmos/.claude/.credentials.json 2>/dev/null && echo "Credentials file exists" || echo "No credentials file"'
-docker exec $CONTAINER sh -c 'test -s /home/cosmos/.claude/.credentials.json && echo "Credentials file has content" || echo "Credentials file is empty"'
+docker exec $CONTAINER sh -c 'ls -la /home/cu/.claude/.credentials.json 2>/dev/null && echo "Credentials file exists" || echo "No credentials file"'
+docker exec $CONTAINER sh -c 'test -s /home/cu/.claude/.credentials.json && echo "Credentials file has content" || echo "Credentials file is empty"'
 
 # Check host-side manager logs if available
 echo ""

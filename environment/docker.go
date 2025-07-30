@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -34,6 +33,8 @@ func (env *Environment) StartDockerSession(ctx context.Context, worktree string,
 		return fmt.Errorf("failed to ensure container: %w", err)
 	}
 
+	go env.handleProxyMessages(ctx)
+
 	return env.attachToDockerContainer(ctx, claudeArgs)
 }
 
@@ -49,9 +50,11 @@ func (env *Environment) ensureDockerContainer(ctx context.Context, worktree stri
 				return nil
 			}
 			// Try to start it
-			if err := exec.CommandContext(ctx, "docker", "start", backend.containerID).Run(); err == nil {
+			out, err := exec.CommandContext(ctx, "docker", "start", backend.containerID).CombinedOutput()
+			if err == nil {
 				return nil
 			}
+			return fmt.Errorf("could not start claude container: %w: %s", err, out)
 		}
 	}
 
@@ -66,23 +69,18 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 	containerName := fmt.Sprintf("cu-%s", env.ID)
 	exec.CommandContext(ctx, "docker", "rm", "-f", containerName).Run()
 
-	// Start manager server before creating container
-	managerAddr, err := env.startManagerServer(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to start manager server: %w", err)
-	}
-
 	workdir := env.State.Config.Workdir
 
 	// Build docker run command
 	args := []string{
 		"run", "-d", "-it",
+		"--init",
+		"-P",
 		"--name", containerName,
 		"-h", containerName,
 		"-w", workdir,
 		"-v", fmt.Sprintf("%s:%s", worktree, workdir),
 		"-e", "CU_ENVIRONMENT_ID=" + env.ID,
-		"-e", "MANAGER_ADDR=" + managerAddr,
 	}
 
 	// Add environment variables
@@ -103,16 +101,24 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 	// TODO: cp ~/.claude/projects/$PROJECT into container. What about TODOS?
 
 	// Merge the Claude image
+	// TODO: check if exists already instead of reexporting
 	env.container().ExportImage(ctx, "container-use-claude")
 	args = append(args, "container-use-claude")
 
-	output, err := exec.CommandContext(ctx, "docker", args...).Output()
+	output, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to create container: %w", err)
+		return fmt.Errorf("failed to create container: %w: %s", err, output)
 	}
 
 	backend.containerID = strings.TrimSpace(string(output))
+	// FIXME(tiborvass): not convinced about the different kinds of container IDs
 	env.State.Container = backend.containerID
+
+	output, err = exec.CommandContext(ctx, "docker", "port", backend.containerID, "8042/tcp").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to get container port: %w: %s", err, output)
+	}
+	clientAddr := strings.TrimSpace(string(output))
 
 	// Copy Claude config after container creation
 	if err := env.copyClaudeConfig(ctx); err != nil {
@@ -120,59 +126,26 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 	}
 
 	// Wait for proxy to connect
-	return env.waitForProxyConnection(ctx)
+	return env.waitForProxyConnection(ctx, clientAddr)
 }
 
-func (env *Environment) startManagerServer(ctx context.Context) (string, error) {
-	listener, err := net.Listen("tcp", "0.0.0.0:0")
+func (env *Environment) waitForProxyConnection(ctx context.Context, clientAddr string) (err error) {
+	dialer := &net.Dialer{}
+	maxRetries := 50
+	backoff := 100 * time.Millisecond
+	for range maxRetries {
+		env.dockerBackend.proxyManager, err = dialer.DialContext(ctx, "tcp", clientAddr)
+		if err == nil {
+			break
+		}
+		slog.Info(fmt.Sprintf("unable to connect to cosmos-manager: %v...", err), "container", env.dockerBackend.containerID, "addr", clientAddr)
+		time.Sleep(backoff)
+	}
 	if err != nil {
-		return "", fmt.Errorf("failed to create listener: %w", err)
+		return fmt.Errorf("failed to connect after %d seconds: %v", maxRetries*int(backoff/time.Second), err)
 	}
-
-	addr := listener.Addr().String()
-	slog.Info("Manager server listening", "addr", addr)
-
-	// On macOS, Docker containers need to use host.docker.internal
-	if runtime.GOOS == "darwin" {
-		_, port, _ := net.SplitHostPort(addr)
-		addr = fmt.Sprintf("host.docker.internal:%s", port)
-	}
-
-	// Accept connection in background
-	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			slog.Error("Failed to accept proxy connection", "error", err)
-			return
-		}
-		slog.Info("Proxy connected", "remote", conn.RemoteAddr())
-
-		env.mu.Lock()
-		env.dockerBackend.proxyManager = conn
-		env.dockerBackend.managerEncoder = json.NewEncoder(conn)
-		env.mu.Unlock()
-
-		// Handle messages from proxy
-		env.handleProxyMessages(ctx)
-	}()
-
-	return addr, nil
-}
-
-func (env *Environment) waitForProxyConnection(ctx context.Context) error {
-	for i := 0; i < 150; i++ {
-		env.mu.RLock()
-		connected := env.dockerBackend != nil && env.dockerBackend.proxyManager != nil
-		env.mu.RUnlock()
-
-		if connected {
-			slog.Info("Proxy connected successfully")
-			return nil
-		}
-
-		time.Sleep(100 * time.Millisecond)
-	}
-	return fmt.Errorf("proxy failed to connect after 15 seconds")
+	slog.Info("connected to client", "addr", env.dockerBackend.proxyManager.RemoteAddr(), "container", env.dockerBackend.containerID)
+	return nil
 }
 
 func (env *Environment) handleProxyMessages(ctx context.Context) {
@@ -272,7 +245,7 @@ func setupClaudeAuth(args []string) []string {
 	credentialsFile := filepath.Join(claudeDir, ".credentials.json")
 
 	if _, err := os.Stat(credentialsFile); err == nil {
-		args = append(args, "-v", fmt.Sprintf("%s:/home/cosmos/.claude/.credentials.json", credentialsFile))
+		args = append(args, "-v", fmt.Sprintf("%s:/home/cu/.claude/.credentials.json", credentialsFile))
 	}
 
 	return args
@@ -359,6 +332,13 @@ func (env *Environment) copyClaudeConfig(ctx context.Context) error {
 		slog.Debug("generated .claude.json:", buf.String())
 	}
 	containerID := env.dockerBackend.containerID
-	cmd := exec.CommandContext(ctx, "docker", "cp", genClaudeJSONPath, fmt.Sprintf("%s:/home/cosmos/.claude.json", containerID))
-	return cmd.Run()
+	out, err := exec.CommandContext(ctx, "docker", "cp", genClaudeJSONPath, fmt.Sprintf("%s:/home/cu/.claude.json", containerID)).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("could not copy .claude.json: %w: %s", err, out)
+	}
+	out, err = exec.CommandContext(ctx, "docker", "exec", "-u", "root", containerID, "chown", "cu", "/home/cu/.claude.json").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("could not chown .claude.json: %w: %s", err, out)
+	}
+	return nil
 }
