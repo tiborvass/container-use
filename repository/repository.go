@@ -159,8 +159,24 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 	if cosmos {
 		config.Workdir = worktree
 		agentify = func(container *dagger.Container) *dagger.Container {
-			// Efficient MergeOp
-			return container.WithDirectory("/", dag.Container().From("tiborvass/claude-code:layer").Rootfs())
+			return container.
+				WithExec([]string{"sh", "-c", "apt update && apt install -y ca-certificates && rm -rf /var/lib/apt/lists/* && apt clean"}).
+				// Efficient MergeOp
+				WithDirectory("/",
+					dag.Container().
+						From("tiborvass/claude-code:layer").
+						Rootfs().
+						WithNewDirectory("/cosmos", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0755}),
+				).
+				WithEnvVariable("ANTHROPIC_BASE_URL", "http://localhost:8080").
+				// claude code doesn't like to be root
+				WithExec([]string{"useradd", "-ms", "/bin/bash", "cu"}, dagger.ContainerWithExecOpts{NoInit: true}).
+				WithDirectory("/home/cu/.claude", dag.Directory().WithNewDirectory(".claude")).
+				WithExec([]string{"chown", "-R", "cu:cu", "/usr/local/bin/container-use-proxy", "/cosmos", "/home/cu"}, dagger.ContainerWithExecOpts{NoInit: true}).
+				WithUser("cu").
+				// healthcheck is currently done by client binary
+				WithExposedPort(8042, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
+				WithEntrypoint([]string{"/usr/local/bin/container-use-proxy"})
 		}
 	}
 

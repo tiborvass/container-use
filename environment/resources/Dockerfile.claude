@@ -33,7 +33,7 @@ EOF
 RUN useradd -ms /bin/bash cosmos
 USER cosmos
 #COPY --chown=cosmos:cosmos container-use-proxy-linux /usr/local/bin/container-use-proxy
-COPY --from=proxy-builder --chown=cosmos:cosmos --link /container-use-proxy /usr/local/bin/container-use-proxy
+#COPY --from=proxy-builder --chown=cosmos:cosmos --link /container-use-proxy /usr/local/bin/container-use-proxy
 # Create .claude directory for Claude's config
 RUN mkdir ~/.claude
 # Set proxy environment variable so manual Claude invocations also use the proxy
@@ -44,17 +44,18 @@ ENTRYPOINT ["/usr/local/bin/container-use-proxy"]
 
 # Image to be inserted in a base image
 FROM scratch AS layer
-# trick to copy symlink
-COPY --from=cosmos --link --exclude=!claude /usr/local/bin /usr/local/bin
-COPY --from=cosmos --link /usr/local/bin/cosmos-proxy /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/
-COPY --from=cosmos --link /usr/local/include/node /usr/local/include/node
-COPY --from=cosmos --link /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=cosmos --link /etc/ssl /etc/ssl
-COPY --from=cosmos --link /usr/share/ca-certificates /usr/share/ca-certificates
-COPY --from=cosmos --link /etc/ca-certificates.conf /etc/ca-certificates.conf
-COPY --from=cosmos --link /usr/lib/ssl /usr/lib/ssl
-COPY --from=cosmos --link /usr/sbin/update-ca-certificates /usr/sbin/
-COPY --from=cosmos --link /usr/lib/aarch64-linux-gnu/engines-3 /usr/lib/aarch64-linux-gnu/libcrypto.so.3 /usr/lib/aarch64-linux-gnu/libssl.so.3 /usr/lib/aarch64-linux-gnu/ossl-modules /usr/lib/aarch64-linux-gnu/
+COPY --from=proxy-builder --link /container-use-proxy /usr/local/bin/container-use-proxy
+# trick to copy claude symlink
+COPY --from=claude-code --link --exclude=!claude /usr/local/bin /usr/local/bin
+COPY --from=claude-code --link /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/
+COPY --from=claude-code --link /usr/local/include/node /usr/local/include/node
+COPY --from=claude-code --link /usr/local/lib/node_modules /usr/local/lib/node_modules
+#COPY --from=cosmos --link /etc/ssl /etc/ssl
+#COPY --from=cosmos --link /usr/share/ca-certificates /usr/share/ca-certificates
+#COPY --from=cosmos --link /etc/ca-certificates.conf /etc/ca-certificates.conf
+#COPY --from=cosmos --link /usr/lib/ssl /usr/lib/ssl
+#COPY --from=cosmos --link /usr/sbin/update-ca-certificates /usr/sbin/
+#COPY --from=cosmos --link /usr/lib/aarch64-linux-gnu/engines-3 /usr/lib/aarch64-linux-gnu/libcrypto.so.3 /usr/lib/aarch64-linux-gnu/libssl.so.3 /usr/lib/aarch64-linux-gnu/ossl-modules /usr/lib/aarch64-linux-gnu/
 
 FROM debian
 RUN useradd -ms /bin/bash cosmos
