@@ -228,9 +228,6 @@ func (env *Environment) SetDockerSnapshotCallback(callback func(string) error) {
 	env.mu.Lock()
 	defer env.mu.Unlock()
 
-	if env.dockerBackend == nil {
-		env.dockerBackend = &DockerBackend{}
-	}
 	env.dockerBackend.snapshotCallback = callback
 }
 

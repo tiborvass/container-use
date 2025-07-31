@@ -201,11 +201,6 @@ func (r *Repository) propagateToWorktree(ctx context.Context, env *environment.E
 }
 
 func (r *Repository) exportEnvironment(ctx context.Context, env *environment.Environment) error {
-	// For Docker backend, files are already in the worktree, skip export
-	if env.IsDockerBackend() {
-		return nil
-	}
-	
 	worktreePointer := fmt.Sprintf("gitdir: %s", filepath.Join(r.forkRepoPath, "worktrees", env.ID))
 
 	worktreePath, err := r.WorktreePath(env.ID)
@@ -226,6 +221,7 @@ func (r *Repository) exportEnvironment(ctx context.Context, env *environment.Env
 
 	return nil
 }
+
 func (r *Repository) propagateGitNotes(ctx context.Context, ref string) error {
 	fullRef := fmt.Sprintf("refs/notes/%s", ref)
 	fetch := func() error {

@@ -160,19 +160,20 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 		config.Workdir = worktree
 		agentify = func(container *dagger.Container) *dagger.Container {
 			return container.
-				WithExec([]string{"sh", "-c", "apt update && apt install -y ca-certificates && rm -rf /var/lib/apt/lists/* && apt clean"}).
+				WithExec([]string{"sh", "-c", "apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/* && apt-get clean"}).
 				// Efficient MergeOp
 				WithDirectory("/",
 					dag.Container().
-						From("tiborvass/claude-code:layer").
+						From("tiborvass/claude-code:layer@sha256:c25e0e5d1a996615c74b41014c030dcee43ee8cf124929201778d821d8897f2f").
 						Rootfs().
+						// TODO: remove this, and forward logs to container-use binary
 						WithNewDirectory("/cosmos", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0755}),
 				).
 				WithEnvVariable("ANTHROPIC_BASE_URL", "http://localhost:8080").
 				// claude code doesn't like to be root
 				WithExec([]string{"useradd", "-ms", "/bin/bash", "cu"}, dagger.ContainerWithExecOpts{NoInit: true}).
 				WithDirectory("/home/cu/.claude", dag.Directory().WithNewDirectory(".claude")).
-				WithExec([]string{"chown", "-R", "cu:cu", "/usr/local/bin/container-use-proxy", "/cosmos", "/home/cu"}, dagger.ContainerWithExecOpts{NoInit: true}).
+				WithExec([]string{"chown", "-R", "cu:cu", "/usr/local/bin/container-use-proxy", "/home/cu", "/cosmos"}, dagger.ContainerWithExecOpts{NoInit: true}).
 				WithUser("cu").
 				// healthcheck is currently done by client binary
 				WithExposedPort(8042, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
@@ -210,7 +211,7 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 }
 
 // Get retrieves an Environment for container operations.
-func (r *Repository) Get(ctx context.Context, _ interface{}, id string) (*environment.Environment, error) {
+func (r *Repository) Get(ctx context.Context, dag *dagger.Client, id string) (*environment.Environment, error) {
 	if err := r.exists(ctx, id); err != nil {
 		return nil, err
 	}
@@ -225,7 +226,7 @@ func (r *Repository) Get(ctx context.Context, _ interface{}, id string) (*enviro
 		return nil, err
 	}
 
-	env, err := environment.Load(ctx, nil, id, state, worktree)
+	env, err := environment.Load(ctx, dag, id, state, worktree)
 	if err != nil {
 		return nil, err
 	}
