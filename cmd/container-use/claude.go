@@ -11,8 +11,8 @@ import (
 
 var claudeCmd = &cobra.Command{
 	Use:   "claude [env]",
-	Short: "Run Claude CLI in a containerized environment",
-	Long: `Run Claude CLI inside a container with API proxy and isolated environment.
+	Short: "Run Claude Code in a containerized environment",
+	Long: `Run Claude Code inside a container with API proxy and isolated environment.
 
 The Claude environment provides:
 - Isolated git worktree for the environment

@@ -16,8 +16,13 @@ import (
 // without requiring dagger operations
 type EnvironmentInfo struct {
 	State *State `json:"state,omitempty"`
+	ID    string `json:"id,omitempty"`
 
-	ID string `json:"id,omitempty"`
+	Notes Notes
+}
+
+type DockerEnvironment struct {
+	*EnvironmentInfo
 }
 
 type Environment struct {
@@ -27,7 +32,6 @@ type Environment struct {
 	agentify func(*dagger.Container) *dagger.Container
 
 	Services []*Service
-	Notes    Notes
 
 	// Docker backend for Claude environments
 	dockerBackend *DockerBackend
@@ -35,7 +39,6 @@ type Environment struct {
 	mu sync.RWMutex
 }
 
-// New returns a cosmos-ready environment if initialSourceDir == nil
 func New(ctx context.Context, dag *dagger.Client, id, title string, config *EnvironmentConfig, initialSourceDir *dagger.Directory, agentify func(*dagger.Container) *dagger.Container) (*Environment, error) {
 	env := &Environment{
 		EnvironmentInfo: &EnvironmentInfo{
