@@ -14,12 +14,15 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"dagger.io/dagger"
 )
 
 const debug = false
 
 // DockerBackend provides Docker-based environment operations
 type DockerBackend struct {
+	serviceID        dagger.ServiceID
 	containerID      string
 	proxyManager     net.Conn
 	managerEncoder   *json.Encoder
@@ -39,90 +42,127 @@ func (env *Environment) StartDockerSession(ctx context.Context, worktree string,
 }
 
 func (env *Environment) ensureDockerContainer(ctx context.Context, worktree string) error {
-	backend := env.dockerBackend
-
-	if backend.containerID != "" {
-		// Check if container still exists and is running
-		cmd := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Running}}", backend.containerID)
-		if output, err := cmd.Output(); err == nil {
-			running := strings.TrimSpace(string(output)) == "true"
-			if running {
-				return nil
+	/*
+		backend := env.dockerBackend
+		if backend.containerID != "" {
+			// Check if container still exists and is running
+			cmd := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Running}}", backend.containerID)
+			if output, err := cmd.Output(); err == nil {
+				running := strings.TrimSpace(string(output)) == "true"
+				if running {
+					return nil
+				}
+				// Try to start it
+				out, err := exec.CommandContext(ctx, "docker", "start", backend.containerID).CombinedOutput()
+				if err == nil {
+					return nil
+				}
+				return fmt.Errorf("could not start claude container: %w: %s", err, out)
 			}
-			// Try to start it
-			out, err := exec.CommandContext(ctx, "docker", "start", backend.containerID).CombinedOutput()
-			if err == nil {
-				return nil
-			}
-			return fmt.Errorf("could not start claude container: %w: %s", err, out)
 		}
-	}
+	*/
 
 	// Create new container
 	return env.createDockerContainer(ctx, worktree)
 }
 
 func (env *Environment) createDockerContainer(ctx context.Context, worktree string) error {
-	backend := env.dockerBackend
+	// backend := env.dockerBackend
 
 	// Remove any existing container with same name
 	containerName := fmt.Sprintf("cu-%s", env.ID)
-	exec.CommandContext(ctx, "docker", "rm", "-f", containerName).Run()
+	// exec.CommandContext(ctx, "docker", "rm", "-f", containerName).Run()
 
-	workdir := env.State.Config.Workdir
+	container := env.container()
+	// workdir := env.State.Config.Workdir
 
 	// Build docker run command
-	args := []string{
-		"run", "-d", "-it",
-		"--init",
-		"-P",
-		"--name", containerName,
-		"-h", containerName,
-		"-w", workdir,
-		"-v", fmt.Sprintf("%s:%s", worktree, workdir),
-		"-e", "CU_ENVIRONMENT_ID=" + env.ID,
-	}
+	// args := []string{
+	// 	"run", "-d", "-it",
+	// 	"--init",
+	// 	"-P",
+	// 	"--name", containerName,
+	// 	"-h", containerName,
+	// 	"-w", workdir,
+	// 	"-v", fmt.Sprintf("%s:%s", worktree, workdir),
+	// 	"-e", "CU_ENVIRONMENT_ID=" + env.ID,
+	// }
 
 	// Add environment variables
-	for _, envVar := range env.State.Config.Env {
-		args = append(args, "-e", envVar)
-	}
+	// for _, envVar := range env.State.Config.Env {
+	// args = append(args, "-e", envVar)
+	// }
 
 	// Add secrets as envvars.
 	// TODO: use --env-file with pipe
-	for _, secret := range env.State.Config.Secrets {
-		k, v, _ := strings.Cut(secret, "=")
-		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
-	}
+	// for _, secret := range env.State.Config.Secrets {
+	// k, v, _ := strings.Cut(secret, "=")
+	// args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+	// }
 
 	// Handle Claude auth
-	args = setupClaudeAuth(args)
+	credsPath, err := claudeCredentialsPath()
+	if err != nil {
+		return err
+	}
+
+	if credsPath != "" {
+		container = container.WithFile("/home/cu/.claude/.credentials.json", env.dag.Host().File(credsPath, dagger.HostFileOpts{NoCache: true}))
+	}
+
+	// args = setupClaudeAuth(args)
 
 	// TODO: cp ~/.claude/projects/$PROJECT into container. What about TODOS?
 
 	// Merge the Claude image
 	// TODO: check if exists already instead of reexporting
-	env.container().ExportImage(ctx, "container-use-claude")
-	args = append(args, "container-use-claude")
+	// env.container().ExportImage(ctx, "container-use-claude")
+	// args = append(args, "container-use-claude")
 
-	output, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to create container: %w: %s", err, output)
-	}
+	// output, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
+	// if err != nil {
+	// return fmt.Errorf("failed to create container: %w: %s", err, output)
+	// }
 
-	backend.containerID = strings.TrimSpace(string(output))
+	// backend.containerID = strings.TrimSpace(string(output))
 	// FIXME(tiborvass): not convinced about the different kinds of container IDs
-	env.State.Container = backend.containerID
+	// env.State.Container = backend.containerID
 
-	output, err = exec.CommandContext(ctx, "docker", "port", backend.containerID, "8042/tcp").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to get container port: %w: %s", err, output)
-	}
-	clientAddr := strings.TrimSpace(string(output))
+	// output, err = exec.CommandContext(ctx, "docker", "port", backend.containerID, "8042/tcp").CombinedOutput()
+	// if err != nil {
+	// return fmt.Errorf("failed to get container port: %w: %s", err, output)
+	// }
+	// clientAddr := strings.TrimSpace(string(output))
 
 	// Copy Claude config after container creation
-	if err := env.copyClaudeConfig(ctx); err != nil {
+	claudeConfigPath, err := env.getClaudeConfig()
+	if err != nil {
 		slog.Warn("Failed to copy Claude config", "error", err)
+	}
+	container = env.copyClaudeConfig(ctx, container, claudeConfigPath)
+
+	svc, err := container.AsService().WithHostname(containerName).Start(ctx)
+	if err != nil {
+		return fmt.Errorf("could not start claude code in dagger")
+	}
+
+	ports, err := svc.Ports(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve exposed ports of claude code container: %w", err)
+	}
+	if len(ports) != 1 {
+		return fmt.Errorf("expected 1 exposed port of claude code container (got %d)", len(ports))
+	}
+	port, err := ports[0].Port(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve exposed port of claude code container: %w", err)
+	}
+
+	clientAddr := fmt.Sprintf("localhost:%d", port)
+
+	env.dockerBackend.serviceID, err = svc.ID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start claude code container: %w", err)
 	}
 
 	// Wait for proxy to connect
@@ -208,17 +248,20 @@ func (env *Environment) commitDockerContainer(ctx context.Context, message strin
 }
 
 func (env *Environment) attachToDockerContainer(ctx context.Context, claudeArgs []string) error {
-	args := []string{"attach", env.dockerBackend.containerID}
+	args := []string{"exec", "-it", "-u", "root", "dagger-engine-v0.18.14", "--privileged", "sh"}
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	environ := append(os.Environ(), "SERVICE_ID="+string(env.dockerBackend.serviceID))
+
 	// Pass claude args via environment
 	if len(claudeArgs) > 0 {
-		cmd.Env = append(os.Environ(), fmt.Sprintf("CLAUDE_ARGS=%s", strings.Join(claudeArgs, " ")))
+		environ = append(environ, fmt.Sprintf("CLAUDE_ARGS=%s", strings.Join(claudeArgs, " ")))
 	}
+	cmd.Env = environ
 
 	return cmd.Run()
 }
@@ -231,32 +274,32 @@ func (env *Environment) SetDockerSnapshotCallback(callback func(string) error) {
 	env.dockerBackend.snapshotCallback = callback
 }
 
-// setupClaudeAuth handles Claude authentication setup
-func setupClaudeAuth(args []string) []string {
+func claudeCredentialsPath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return args
+		return "", fmt.Errorf("could not get Claude Code .credentials.json: %w", err)
 	}
 
 	claudeDir := filepath.Join(homeDir, ".claude")
 	credentialsFile := filepath.Join(claudeDir, ".credentials.json")
 
 	if _, err := os.Stat(credentialsFile); err == nil {
-		args = append(args, "-v", fmt.Sprintf("%s:/home/cu/.claude/.credentials.json", credentialsFile))
+		return credentialsFile, nil
+		// args = append(args, "-v", fmt.Sprintf("%s:/home/cu/.claude/.credentials.json", credentialsFile))
 	}
 
-	return args
+	return "", nil
 }
 
-func (env *Environment) copyClaudeConfig(ctx context.Context) error {
+func (env *Environment) getClaudeConfig() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	workdir := env.State.Config.Workdir
@@ -270,15 +313,15 @@ func (env *Environment) copyClaudeConfig(ctx context.Context) error {
 		d := json.NewDecoder(f)
 		defer f.Close()
 		if err := d.Decode(&config); err != nil {
-			return err
+			return "", err
 		}
 	} else if !os.IsNotExist(err) {
-		return err
+		return "", err
 	}
 
 	projects, ok := config["projects"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("expected \"projects\" field of %q to be an object", claudeJSONPath)
+		return "", fmt.Errorf("expected \"projects\" field of %q to be an object", claudeJSONPath)
 	}
 	if len(projects) == 0 {
 		projects = map[string]any{}
@@ -288,7 +331,7 @@ func (env *Environment) copyClaudeConfig(ctx context.Context) error {
 	}
 	project, ok := projects[cwd].(map[string]any)
 	if !ok {
-		return fmt.Errorf("expected projects[%q] field of %q to be an object", workdir, claudeJSONPath)
+		return "", fmt.Errorf("expected projects[%q] field of %q to be an object", workdir, claudeJSONPath)
 	}
 	if len(project) == 0 {
 		project = map[string]any{
@@ -310,7 +353,7 @@ func (env *Environment) copyClaudeConfig(ctx context.Context) error {
 	f.Close()
 	f, err = os.Create(genClaudeJSONPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	var buf bytes.Buffer
@@ -321,21 +364,29 @@ func (env *Environment) copyClaudeConfig(ctx context.Context) error {
 	e := json.NewEncoder(w)
 	e.SetIndent("", "  ")
 	if err := e.Encode(config); err != nil {
-		return err
+		return "", err
 	}
 	f.Close()
 
 	if debug {
 		slog.Debug("generated .claude.json:", buf.String())
 	}
-	containerID := env.dockerBackend.containerID
-	out, err := exec.CommandContext(ctx, "docker", "cp", genClaudeJSONPath, fmt.Sprintf("%s:/home/cu/.claude.json", containerID)).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("could not copy .claude.json: %w: %s", err, out)
-	}
-	out, err = exec.CommandContext(ctx, "docker", "exec", "-u", "root", containerID, "chown", "cu", "/home/cu/.claude.json").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("could not chown .claude.json: %w: %s", err, out)
-	}
-	return nil
+
+	return genClaudeJSONPath, nil
+}
+
+func (env *Environment) copyClaudeConfig(ctx context.Context, container *dagger.Container, genClaudeJSONPath string) *dagger.Container {
+	return container.WithFile("/home/cu/.claude.json", env.dag.Host().File(genClaudeJSONPath, dagger.HostFileOpts{NoCache: true}), dagger.ContainerWithFileOpts{Owner: "cu"})
+	/*
+		containerID := env.dockerBackend.containerID
+		out, err := exec.CommandContext(ctx, "docker", "cp", genClaudeJSONPath, fmt.Sprintf("%s:/home/cu/.claude.json", containerID)).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("could not copy .claude.json: %w: %s", err, out)
+		}
+		out, err = exec.CommandContext(ctx, "docker", "exec", "-u", "root", containerID, "chown", "cu", "/home/cu/.claude.json").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("could not chown .claude.json: %w: %s", err, out)
+		}
+		return nil
+	*/
 }
