@@ -167,10 +167,6 @@ func (env *Environment) buildBase(ctx context.Context, baseSourceDir *dagger.Dir
 		From(env.State.Config.BaseImage).
 		WithWorkdir(env.State.Config.Workdir)
 
-	if env.agentify != nil {
-		container = env.agentify(container)
-	}
-
 	container, err := containerWithEnvAndSecrets(env.dag, container, env.State.Config.Env, env.State.Config.Secrets)
 	if err != nil {
 		return nil, err
@@ -226,6 +222,10 @@ func (env *Environment) buildBase(ctx context.Context, baseSourceDir *dagger.Dir
 	// Run the install commands after the source directory is set up
 	if err := runCommands(env.State.Config.InstallCommands); err != nil {
 		return nil, fmt.Errorf("install command failed: %w", err)
+	}
+
+	if env.agentify != nil {
+		container = env.agentify(container)
 	}
 
 	return container, nil
