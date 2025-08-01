@@ -157,7 +157,6 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 	var agentify func(*dagger.Container) *dagger.Container
 	config := environment.DefaultConfig()
 	if cosmos {
-		config.Workdir = worktree
 		agentify = func(container *dagger.Container) *dagger.Container {
 			return container.
 				WithExec([]string{"sh", "-c", "apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/* && apt-get clean"}).
@@ -177,7 +176,9 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 				WithUser("cu").
 				// healthcheck is currently done by client binary
 				WithExposedPort(8042, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
-				WithEntrypoint([]string{"/usr/local/bin/container-use-proxy"})
+				WithEntrypoint([]string{"/usr/local/bin/container-use-proxy"}).
+				WithMountedDirectory(worktree, container.Directory(config.Workdir)).
+				WithWorkdir(worktree)
 		}
 	}
 

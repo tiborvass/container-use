@@ -69,7 +69,7 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 	containerName := fmt.Sprintf("cu-%s", env.ID)
 	exec.CommandContext(ctx, "docker", "rm", "-f", containerName).Run()
 
-	workdir := env.State.Config.Workdir
+	// workdir := env.State.Config.Workdir
 
 	// Build docker run command
 	args := []string{
@@ -78,8 +78,8 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 		"-P",
 		"--name", containerName,
 		"-h", containerName,
-		"-w", workdir,
-		"-v", fmt.Sprintf("%s:%s", worktree, workdir),
+		"-w", worktree,
+		"-v", fmt.Sprintf("%s:%s", worktree, worktree),
 		"-e", "CU_ENVIRONMENT_ID=" + env.ID,
 	}
 
