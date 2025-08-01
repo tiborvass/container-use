@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"dagger.io/dagger"
@@ -36,7 +37,7 @@ func (env *Environment) StartDockerSession(ctx context.Context, worktree string,
 		return fmt.Errorf("failed to ensure container: %w", err)
 	}
 
-	go env.handleProxyMessages(ctx)
+	// go env.handleProxyMessages(ctx)
 
 	return env.attachToDockerContainer(ctx, claudeArgs)
 }
@@ -67,11 +68,14 @@ func (env *Environment) ensureDockerContainer(ctx context.Context, worktree stri
 }
 
 func (env *Environment) createDockerContainer(ctx context.Context, worktree string) error {
-	return nil
+	// return nil
 	// backend := env.dockerBackend
 
+	// containerName := fmt.Sprintf("cu-helper-%s", env.ID)
+
+	return nil
+
 	// Remove any existing container with same name
-	// containerName := fmt.Sprintf("cu-%s", env.ID)
 	// exec.CommandContext(ctx, "docker", "rm", "-f", containerName).Run()
 
 	container := env.container()
@@ -81,11 +85,12 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 	// args := []string{
 	// 	"run", "-d", "-it",
 	// 	"--init",
-	// 	"-P",
+	// 	"-p", "8042",
 	// 	"--name", containerName,
 	// 	"-h", containerName,
-	// 	"-w", workdir,
-	// 	"-v", fmt.Sprintf("%s:%s", worktree, workdir),
+	// 	// "-w", workdir,
+	// 	// "-v", fmt.Sprintf("%s:%s", worktree, workdir),
+	// 	// "-v", "",
 	// 	"-e", "CU_ENVIRONMENT_ID=" + env.ID,
 	// }
 
@@ -257,22 +262,76 @@ func (env *Environment) commitDockerContainer(ctx context.Context, message strin
 }
 
 func (env *Environment) attachToDockerContainer(ctx context.Context, claudeArgs []string) error {
-	args := []string{"exec", "-it", "-u", "root", "dagger-engine-v0.18.14", "--privileged", "sh"}
+	out, err := exec.CommandContext(ctx, "dagger", "version").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("could not run dagger version: %w: %s", err, out)
+	}
+	i, j := bytes.IndexByte(out, '('), bytes.IndexByte(out, ')')
+	if i < 0 || j < 0 {
+		return fmt.Errorf("could not find '(' or ')' in dagger version output: %s", out)
+	}
+	runnerHost := string(out[i+1 : j])
+	proto, v, _ := strings.Cut(runnerHost, "://")
+	key := ""
+	switch proto {
+	case "docker-image":
+		key = "ancestor"
+	case "docker-container":
+		key = "name"
+	default:
+		return fmt.Errorf("could not infer dagger runner host protocol in runnerHost %q", runnerHost)
+	}
+	out, err = exec.CommandContext(ctx, "docker", "ps", "-lq", "-f", key+"="+v).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("could not find dagger engine container: %w: %s", err, out)
+	}
+
+	daggerEngineContainerID := strings.TrimSpace(string(out))
+
+	// TODO: need something more robust in case env.ID conflicts with existing IDs.
+	script := fmt.Sprintf(`dir=$(find /var/lib/dagger/worker/snapshots/snapshots -name sockets-%q -type d | head -1 | tee /tmp/debug); exec "${dir}/../usr/local/bin/container-use-proxy" "$dir"/cosmos.sock`, env.ID)
+	// script := fmt.Sprintf(`echo %q > /tmp/debug`, env.ID)
+
+	args := []string{
+		"exec",
+		"--privileged",
+		"-e", "CU_PROXY_HELPER=1",
+		"-e", "CU_ENVIRONMENT_ID=" + env.ID,
+		daggerEngineContainerID,
+		"sh", "-c",
+		script,
+	}
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	environ := append(os.Environ(), "SERVICE_ID="+string(env.dockerBackend.serviceID))
-
-	// Pass claude args via environment
-	if len(claudeArgs) > 0 {
-		environ = append(environ, fmt.Sprintf("CLAUDE_ARGS=%s", strings.Join(claudeArgs, " ")))
+	err = cmd.Start()
+	if err != nil {
+		return fmt.Errorf("could not start cosmos proxy helper: %w: %s", err, out)
 	}
-	cmd.Env = environ
+	defer cmd.Process.Signal(syscall.SIGTERM)
+	// time.Sleep(time.Second * 5)
+	slog.Info("Starting agent...")
+	env.container().Terminal(dagger.ContainerTerminalOpts{Cmd: []string{"/usr/local/bin/container-use-proxy"}}).Sync(ctx)
+	// time.Sleep(time.Second * 5)
 
-	return cmd.Run()
+	/*
+		args := []string{"exec", "-it", "-u", "root", "dagger-engine-v0.18.14", "--privileged", "sh"}
+
+		cmd := exec.CommandContext(ctx, "docker", args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		environ := append(os.Environ(), "SERVICE_ID="+string(env.dockerBackend.serviceID))
+
+		// Pass claude args via environment
+		if len(claudeArgs) > 0 {
+			environ = append(environ, fmt.Sprintf("CLAUDE_ARGS=%s", strings.Join(claudeArgs, " ")))
+		}
+		cmd.Env = environ
+
+		return cmd.Run()
+	*/
+	return nil
 }
 
 // SetDockerSnapshotCallback sets the callback for when Docker snapshots are created

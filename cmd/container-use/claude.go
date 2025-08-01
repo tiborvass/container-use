@@ -46,6 +46,11 @@ func init() {
 
 func runClaude(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+
+	if err := ensureDaggerRun(); err != nil {
+		return err
+	}
+
 	claudeArgs := args
 
 	if len(args) > 0 && args[0] == "--" {

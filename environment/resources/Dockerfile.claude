@@ -41,10 +41,11 @@ ENV ANTHROPIC_BASE_URL=http://localhost:8080
 # No ports exposed - proxy connects to host manager
 ENTRYPOINT ["/usr/local/bin/container-use-proxy"]
 
-
-# Image to be inserted in a base image
-FROM scratch AS layer
+FROM scratch AS proxy
 COPY --from=proxy-builder --link /container-use-proxy /usr/local/bin/container-use-proxy
+
+# Image to be merged into a base image
+FROM proxy AS layer
 # trick to copy claude symlink
 COPY --from=claude-code --link --exclude=!claude /usr/local/bin /usr/local/bin
 COPY --from=claude-code --link /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/

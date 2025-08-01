@@ -147,7 +147,7 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 	id := petname.Generate(2, "-")
 	worktree, err := r.initializeWorktree(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("toto: %w", err)
 	}
 
 	if err := r.createInitialCommit(ctx, worktree, id, description); err != nil {
@@ -157,13 +157,34 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 	var agentify func(*environment.Environment, *dagger.Container) (*dagger.Container, error)
 	config := environment.DefaultConfig()
 	if cosmos {
-		config.Workdir = worktree
+		// Commenting because it is busting cache too often
+		// config.Workdir = worktree
 		agentify = func(env *environment.Environment, container *dagger.Container) (*dagger.Container, error) {
+			socketsDir := "sockets-" + env.ID
+			claudeCodeLayer := "tiborvass/claude-code:layer@sha256:75dfdc7360f8b7624105c917264d92759063a73a44b37bdfa276ada0ab56e917"
+
+			container = container.
+				WithExec([]string{"sh", "-c", "apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/* && apt-get clean"}).
+				// Efficient MergeOp
+				WithDirectory("/",
+					dag.Container().
+						From(claudeCodeLayer).
+						Rootfs().
+						// TODO: remove this, and forward logs to container-use binary
+						WithNewDirectory("/cosmos", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0755}).
+						// Helper will listen on a socket in this folder
+						WithNewDirectory("/"+socketsDir, dagger.DirectoryWithNewDirectoryOpts{Permissions: 0755}),
+				).
+				WithEnvVariable("ANTHROPIC_BASE_URL", "http://localhost:8080").
+				// claude code doesn't like to be root
+				WithExec([]string{"useradd", "-ms", "/bin/bash", "cu"}, dagger.ContainerWithExecOpts{NoInit: true}).
+				WithDirectory("/home/cu/.claude", dag.Directory().WithNewDirectory(".claude")).
+				WithExec([]string{"chown", "-R", "cu:cu", "/usr/local/bin/container-use-proxy", "/home/cu", "/cosmos"}, dagger.ContainerWithExecOpts{NoInit: true})
 
 			// Handle Claude auth
 			credsPath, err := environment.ClaudeCredentialsPath()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to get Claude credentials path: %w", err)
 			}
 
 			if credsPath != "" {
@@ -176,38 +197,18 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 			}
 			container = container.WithFile("/home/cu/.claude.json", dag.Host().File(claudeConfigPath, dagger.HostFileOpts{NoCache: true}), dagger.ContainerWithFileOpts{Owner: "cu"})
 
-			cuManager := dag.Container().From(environment.AlpineImage).WithExposedPort(8042).AsService(dagger.ContainerAsServiceOpts{
-				Args:                     []string{"/bin/sh", "-c", "ls -l /dev/ && false"},
-				InsecureRootCapabilities: true,
-			})
-
 			container = container.
-				WithExec([]string{"sh", "-c", "apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/* && apt-get clean"}).
-				// Efficient MergeOp
-				WithDirectory("/",
-					dag.Container().
-						From("tiborvass/claude-code:layer@sha256:c25e0e5d1a996615c74b41014c030dcee43ee8cf124929201778d821d8897f2f").
-						Rootfs().
-						// TODO: remove this, and forward logs to container-use binary
-						WithNewDirectory("/cosmos", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0755}),
-				).
-				WithEnvVariable("ANTHROPIC_BASE_URL", "http://localhost:8080").
-				// claude code doesn't like to be root
-				WithExec([]string{"useradd", "-ms", "/bin/bash", "cu"}, dagger.ContainerWithExecOpts{NoInit: true}).
-				WithDirectory("/home/cu/.claude", dag.Directory().WithNewDirectory(".claude")).
-				WithExec([]string{"chown", "-R", "cu:cu", "/usr/local/bin/container-use-proxy", "/home/cu", "/cosmos"}, dagger.ContainerWithExecOpts{NoInit: true}).
 				WithUser("cu").
 				// healthcheck is currently done by client binary
-				WithExposedPort(8042, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
-				WithEntrypoint([]string{"/usr/local/bin/container-use-proxy"}).
-				WithServiceBinding("cu-manager", cuManager)
+				// WithExposedPort(8042, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
+				WithEntrypoint([]string{"/usr/local/bin/container-use-proxy"})
 			return container, nil
 		}
 	}
 
 	worktreeHead, err := RunGitCommand(ctx, worktree, "rev-parse", "HEAD")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get worktree head: %w", err)
 	}
 	worktreeHead = strings.TrimSpace(worktreeHead)
 
@@ -228,7 +229,7 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 	}
 
 	if err := r.propagateToWorktree(ctx, env, explanation); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to propagate environment to worktree: %w", err)
 	}
 
 	return env, nil

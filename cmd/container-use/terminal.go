@@ -35,17 +35,8 @@ container-use terminal`,
 			return err
 		}
 
-		// FIXME(aluzzardi): This is a hack to make sure we're wrapped in `dagger run` since `Terminal()` only works with the CLI.
-		// If not, it will auto-wrap this command in a `dagger run`.
-		if _, ok := os.LookupEnv("DAGGER_SESSION_TOKEN"); !ok {
-			daggerBin, err := exec.LookPath("dagger")
-			if err != nil {
-				if errors.Is(err, exec.ErrNotFound) {
-					return fmt.Errorf("dagger is not installed. Please install it from https://docs.dagger.io/install/")
-				}
-				return fmt.Errorf("failed to look up dagger binary: %w", err)
-			}
-			return execDaggerRun(daggerBin, append([]string{"dagger", "run"}, os.Args...), os.Environ())
+		if err := ensureDaggerRun(); err != nil {
+			return err
 		}
 
 		dag, err := daggerConnect(ctx, os.Stderr)
@@ -70,4 +61,20 @@ container-use terminal`,
 
 func init() {
 	rootCmd.AddCommand(terminalCmd)
+}
+
+func ensureDaggerRun() error {
+	// FIXME(aluzzardi): This is a hack to make sure we're wrapped in `dagger run` since `Terminal()` only works with the CLI.
+	// If not, it will auto-wrap this command in a `dagger run`.
+	if _, ok := os.LookupEnv("DAGGER_SESSION_TOKEN"); !ok {
+		daggerBin, err := exec.LookPath("dagger")
+		if err != nil {
+			if errors.Is(err, exec.ErrNotFound) {
+				return fmt.Errorf("dagger is not installed. Please install it from https://docs.dagger.io/install/")
+			}
+			return fmt.Errorf("failed to look up dagger binary: %w", err)
+		}
+		return execDaggerRun(daggerBin, append([]string{"dagger", "run"}, os.Args...), os.Environ())
+	}
+	return nil
 }

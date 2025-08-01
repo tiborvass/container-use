@@ -90,7 +90,7 @@ func Start(ctx context.Context, proxyAddr, managerAddr string) (*Server, error) 
 	// Connect to manager if address provided
 	var managerConn net.Conn
 	if managerAddr != "" {
-		conn, err := connectToManager(managerAddr)
+		conn, err := connectToManager(ctx, managerAddr)
 		if err != nil {
 			logger.Printf("Warning: failed to connect to manager: %v", err)
 		} else {
@@ -312,22 +312,44 @@ func (s *Server) sendCommit(message string) {
 	}
 }
 
-func connectToManager(addr string) (net.Conn, error) {
-	maxRetries := 10
-	backoff := time.Second / 2
-
-	for i := 0; i < maxRetries; i++ {
-		conn, err := net.Dial("tcp", addr)
+func connectToManager(ctx context.Context, addr string) (net.Conn, error) {
+	dialer := &net.Dialer{}
+	maxRetries := 50
+	backoff := 100 * time.Millisecond
+	var unixConn net.Conn
+	var err error
+	for range maxRetries {
+		unixConn, err = dialer.DialContext(ctx, "unix", addr)
 		if err == nil {
-			return conn, nil
+			return unixConn, nil
 		}
-		if i < maxRetries-1 {
-			time.Sleep(backoff)
-			backoff *= 2
-		}
+		log.Printf("unable to connect to cosmos-manager: %v...", err)
+		time.Sleep(backoff)
 	}
+	return nil, fmt.Errorf("failed to connect after %d seconds: %w", maxRetries*int(backoff/time.Second), err)
+	/*
+		l, err := net.Listen("unix", addr)
+		if err != nil {
+			return nil, err
+		}
+		return l.Accept()
 
-	return nil, fmt.Errorf("failed to connect to manager at %s after %d attempts", addr, maxRetries)
+		maxRetries := 10
+		backoff := time.Second / 2
+
+		for i := 0; i < maxRetries; i++ {
+			conn, err := net.Dial("tcp", addr)
+			if err == nil {
+				return conn, nil
+			}
+			if i < maxRetries-1 {
+				time.Sleep(backoff)
+				backoff *= 2
+			}
+		}
+
+		return nil, fmt.Errorf("failed to connect to manager at %s after %d attempts", addr, maxRetries)
+	*/
 }
 
 func waitForProxy(addr string) error {

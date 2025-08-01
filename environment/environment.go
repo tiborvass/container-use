@@ -57,13 +57,13 @@ func New(ctx context.Context, dag *dagger.Client, id, title string, config *Envi
 
 	container, err := env.buildBase(ctx, initialSourceDir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build base container: %w", err)
 	}
 
 	slog.Info("Creating environment", "id", env.ID, "workdir", env.State.Config.Workdir)
 
 	if err := env.apply(ctx, container); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to apply environment: %w", err)
 	}
 
 	return env, nil
