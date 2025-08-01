@@ -217,7 +217,9 @@ func (env *Environment) buildBase(ctx context.Context, baseSourceDir *dagger.Dir
 		container = container.WithServiceBinding(service.Config.Name, service.svc)
 	}
 
-	container = container.WithDirectory(".", baseSourceDir)
+	if baseSourceDir != nil {
+		container = container.WithDirectory(".", baseSourceDir)
+	}
 
 	// Run the install commands after the source directory is set up
 	if err := runCommands(env.State.Config.InstallCommands); err != nil {

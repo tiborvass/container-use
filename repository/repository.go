@@ -154,6 +154,7 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 		return nil, fmt.Errorf("failed to create initial commit: %w", err)
 	}
 
+	var baseSourceDir *dagger.Directory
 	var agentify func(*dagger.Container) *dagger.Container
 	config := environment.DefaultConfig()
 	if cosmos {
@@ -177,26 +178,26 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 				// healthcheck is currently done by client binary
 				WithExposedPort(8042, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
 				WithEntrypoint([]string{"/usr/local/bin/container-use-proxy"}).
-				WithMountedDirectory(worktree, container.Directory(config.Workdir)).
+				WithMountedDirectory(worktree, container.Rootfs().WithNewDirectory(config.Workdir).Directory(config.Workdir)).
 				WithWorkdir(worktree)
 		}
-	}
+	} else {
+		worktreeHead, err := RunGitCommand(ctx, worktree, "rev-parse", "HEAD")
+		if err != nil {
+			return nil, err
+		}
+		worktreeHead = strings.TrimSpace(worktreeHead)
 
-	worktreeHead, err := RunGitCommand(ctx, worktree, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, err
-	}
-	worktreeHead = strings.TrimSpace(worktreeHead)
-
-	baseSourceDir, err := dag.
-		Host().
-		Directory(r.forkRepoPath, dagger.HostDirectoryOpts{NoCache: true}). // bust cache for each Create call
-		AsGit().
-		Ref(worktreeHead).
-		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
-		Sync(ctx) // don't bust cache when loading from state
-	if err != nil {
-		return nil, fmt.Errorf("failed loading initial source directory: %w", err)
+		baseSourceDir, err = dag.
+			Host().
+			Directory(r.forkRepoPath, dagger.HostDirectoryOpts{NoCache: true}). // bust cache for each Create call
+			AsGit().
+			Ref(worktreeHead).
+			Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+			Sync(ctx) // don't bust cache when loading from state
+		if err != nil {
+			return nil, fmt.Errorf("failed loading initial source directory: %w", err)
+		}
 	}
 
 	env, err := environment.New(ctx, dag, id, description, config, baseSourceDir, agentify)
