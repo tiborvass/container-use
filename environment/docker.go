@@ -67,10 +67,11 @@ func (env *Environment) ensureDockerContainer(ctx context.Context, worktree stri
 }
 
 func (env *Environment) createDockerContainer(ctx context.Context, worktree string) error {
+	return nil
 	// backend := env.dockerBackend
 
 	// Remove any existing container with same name
-	containerName := fmt.Sprintf("cu-%s", env.ID)
+	// containerName := fmt.Sprintf("cu-%s", env.ID)
 	// exec.CommandContext(ctx, "docker", "rm", "-f", containerName).Run()
 
 	container := env.container()
@@ -101,7 +102,7 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 	// }
 
 	// Handle Claude auth
-	credsPath, err := claudeCredentialsPath()
+	credsPath, err := ClaudeCredentialsPath()
 	if err != nil {
 		return err
 	}
@@ -135,38 +136,45 @@ func (env *Environment) createDockerContainer(ctx context.Context, worktree stri
 	// clientAddr := strings.TrimSpace(string(output))
 
 	// Copy Claude config after container creation
-	claudeConfigPath, err := env.getClaudeConfig()
+	claudeConfigPath, err := env.GetClaudeConfig()
 	if err != nil {
 		slog.Warn("Failed to copy Claude config", "error", err)
 	}
 	container = env.copyClaudeConfig(ctx, container, claudeConfigPath)
 
-	svc, err := container.AsService().WithHostname(containerName).Start(ctx)
-	if err != nil {
-		return fmt.Errorf("could not start claude code in dagger")
-	}
+	cuManager := env.dag.Container().From(AlpineImage).WithExposedPort(8042).AsService(dagger.ContainerAsServiceOpts{
+		Args:                     []string{"/bin/sh", "-c", "ls -l /dev/ && false"},
+		InsecureRootCapabilities: true,
+	})
 
-	ports, err := svc.Ports(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve exposed ports of claude code container: %w", err)
-	}
-	if len(ports) != 1 {
-		return fmt.Errorf("expected 1 exposed port of claude code container (got %d)", len(ports))
-	}
-	port, err := ports[0].Port(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve exposed port of claude code container: %w", err)
-	}
+	container = container.WithServiceBinding("cu-manager", cuManager)
 
-	clientAddr := fmt.Sprintf("localhost:%d", port)
+	// svc, err := container.AsService().WithHostname(containerName).Start(ctx)
+	// if err != nil {
+	// 	return fmt.Errorf("could not start claude code in dagger")
+	// }
 
-	env.dockerBackend.serviceID, err = svc.ID(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to start claude code container: %w", err)
-	}
+	// ports, err := svc.Ports(ctx)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to retrieve exposed ports of claude code container: %w", err)
+	// }
+	// if len(ports) != 1 {
+	// 	return fmt.Errorf("expected 1 exposed port of claude code container (got %d)", len(ports))
+	// }
+	// port, err := ports[0].Port(ctx)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to retrieve exposed port of claude code container: %w", err)
+	// }
+
+	// clientAddr := fmt.Sprintf("localhost:%d", port)
+
+	// env.dockerBackend.serviceID, err = svc.ID(ctx)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to start claude code container: %w", err)
+	// }
 
 	// Wait for proxy to connect
-	return env.waitForProxyConnection(ctx, clientAddr)
+	return nil // env.waitForProxyConnection(ctx, clientAddr)
 }
 
 func (env *Environment) waitForProxyConnection(ctx context.Context, clientAddr string) (err error) {
@@ -189,6 +197,7 @@ func (env *Environment) waitForProxyConnection(ctx context.Context, clientAddr s
 }
 
 func (env *Environment) handleProxyMessages(ctx context.Context) {
+	return
 	dec := json.NewDecoder(env.dockerBackend.proxyManager)
 
 	for {
@@ -274,7 +283,7 @@ func (env *Environment) SetDockerSnapshotCallback(callback func(string) error) {
 	env.dockerBackend.snapshotCallback = callback
 }
 
-func claudeCredentialsPath() (string, error) {
+func ClaudeCredentialsPath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("could not get Claude Code .credentials.json: %w", err)
@@ -291,7 +300,7 @@ func claudeCredentialsPath() (string, error) {
 	return "", nil
 }
 
-func (env *Environment) getClaudeConfig() (string, error) {
+func (env *Environment) GetClaudeConfig() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err

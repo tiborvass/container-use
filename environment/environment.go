@@ -29,7 +29,7 @@ type Environment struct {
 	*EnvironmentInfo
 
 	dag      *dagger.Client
-	agentify func(*dagger.Container) *dagger.Container
+	agentify func(*Environment, *dagger.Container) (*dagger.Container, error)
 
 	Services []*Service
 
@@ -39,7 +39,7 @@ type Environment struct {
 	mu sync.RWMutex
 }
 
-func New(ctx context.Context, dag *dagger.Client, id, title string, config *EnvironmentConfig, initialSourceDir *dagger.Directory, agentify func(*dagger.Container) *dagger.Container) (*Environment, error) {
+func New(ctx context.Context, dag *dagger.Client, id, title string, config *EnvironmentConfig, initialSourceDir *dagger.Directory, agentify func(*Environment, *dagger.Container) (*dagger.Container, error)) (*Environment, error) {
 	env := &Environment{
 		EnvironmentInfo: &EnvironmentInfo{
 			ID: id,
@@ -168,7 +168,11 @@ func (env *Environment) buildBase(ctx context.Context, baseSourceDir *dagger.Dir
 		WithWorkdir(env.State.Config.Workdir)
 
 	if env.agentify != nil {
-		container = env.agentify(container)
+		var err error
+		container, err = env.agentify(env, container)
+		if err != nil {
+			return nil, fmt.Errorf("could not add agent to environment: %w", err)
+		}
 	}
 
 	container, err := containerWithEnvAndSecrets(env.dag, container, env.State.Config.Env, env.State.Config.Secrets)

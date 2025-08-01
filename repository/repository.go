@@ -154,12 +154,34 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 		return nil, fmt.Errorf("failed to create initial commit: %w", err)
 	}
 
-	var agentify func(*dagger.Container) *dagger.Container
+	var agentify func(*environment.Environment, *dagger.Container) (*dagger.Container, error)
 	config := environment.DefaultConfig()
 	if cosmos {
 		config.Workdir = worktree
-		agentify = func(container *dagger.Container) *dagger.Container {
-			return container.
+		agentify = func(env *environment.Environment, container *dagger.Container) (*dagger.Container, error) {
+
+			// Handle Claude auth
+			credsPath, err := environment.ClaudeCredentialsPath()
+			if err != nil {
+				return nil, err
+			}
+
+			if credsPath != "" {
+				container = container.WithFile("/home/cu/.claude/.credentials.json", dag.Host().File(credsPath, dagger.HostFileOpts{NoCache: true}))
+			}
+			// Copy Claude config after container creation
+			claudeConfigPath, err := env.GetClaudeConfig()
+			if err != nil {
+				slog.Warn("Failed to copy Claude config", "error", err)
+			}
+			container = container.WithFile("/home/cu/.claude.json", dag.Host().File(claudeConfigPath, dagger.HostFileOpts{NoCache: true}), dagger.ContainerWithFileOpts{Owner: "cu"})
+
+			cuManager := dag.Container().From(environment.AlpineImage).WithExposedPort(8042).AsService(dagger.ContainerAsServiceOpts{
+				Args:                     []string{"/bin/sh", "-c", "ls -l /dev/ && false"},
+				InsecureRootCapabilities: true,
+			})
+
+			container = container.
 				WithExec([]string{"sh", "-c", "apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/* && apt-get clean"}).
 				// Efficient MergeOp
 				WithDirectory("/",
@@ -177,7 +199,9 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 				WithUser("cu").
 				// healthcheck is currently done by client binary
 				WithExposedPort(8042, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
-				WithEntrypoint([]string{"/usr/local/bin/container-use-proxy"})
+				WithEntrypoint([]string{"/usr/local/bin/container-use-proxy"}).
+				WithServiceBinding("cu-manager", cuManager)
+			return container, nil
 		}
 	}
 
