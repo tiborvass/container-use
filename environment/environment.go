@@ -33,9 +33,6 @@ type Environment struct {
 
 	Services []*Service
 
-	// Docker backend for Claude environments
-	dockerBackend *DockerBackend
-
 	mu sync.RWMutex
 }
 
@@ -50,9 +47,8 @@ func New(ctx context.Context, dag *dagger.Client, id, title string, config *Envi
 				UpdatedAt: time.Now(),
 			},
 		},
-		dag:           dag,
-		agentify:      agentify,
-		dockerBackend: &DockerBackend{},
+		dag:      dag,
+		agentify: agentify,
 	}
 
 	container, err := env.buildBase(ctx, initialSourceDir)
