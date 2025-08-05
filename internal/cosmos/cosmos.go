@@ -20,6 +20,7 @@ const debug = false
 
 // Cosmos handles one dockerized agent (e.g. Claude Code)
 type Cosmos struct {
+	Workdir          string
 	SnapshotCallback func(string) error
 	containerID      string
 	proxyManager     net.Conn
@@ -163,7 +164,7 @@ func (c *Cosmos) handleProxyMessages(ctx context.Context) {
 		case "commit":
 			var message string
 			json.Unmarshal(msg.Data, &message)
-			slog.Info("Processing commit", "message", message)
+			slog.Info("Processing docker commit", "message", message)
 
 			// Create Docker snapshot
 			imageID, err := c.commitDockerContainer(ctx, message)
@@ -171,6 +172,8 @@ func (c *Cosmos) handleProxyMessages(ctx context.Context) {
 				slog.Error("Failed to commit container", "error", err)
 				continue
 			}
+
+			slog.Info("Docker commit done", "image", imageID)
 
 			// env.Notes.Add("Snapshot created: %s (image: %s)", message, imageID[:12])
 
@@ -194,7 +197,7 @@ func (c *Cosmos) commitDockerContainer(ctx context.Context, message string) (str
 	imageID := strings.TrimSpace(string(output))
 
 	// Track in state (reusing existing snapshot structure)
-	c.State.UpdatedAt = time.Now()
+	// c.State.UpdatedAt = time.Now()
 
 	return imageID, nil
 }
@@ -243,7 +246,7 @@ func (c *Cosmos) copyClaudeConfig(ctx context.Context, envID string) error {
 		return err
 	}
 
-	workdir := c.State.Config.Workdir
+	// workdir := c.State.Config.Workdir
 	config := map[string]any{}
 
 	claudeJSONPath := filepath.Join(homeDir, ".claude.json")
@@ -272,7 +275,7 @@ func (c *Cosmos) copyClaudeConfig(ctx context.Context, envID string) error {
 	}
 	project, ok := projects[cwd].(map[string]any)
 	if !ok {
-		return fmt.Errorf("expected projects[%q] field of %q to be an object", workdir, claudeJSONPath)
+		return fmt.Errorf("expected projects[%q] field of %q to be an object", c.Workdir, claudeJSONPath)
 	}
 	if len(project) == 0 {
 		project = map[string]any{
@@ -288,7 +291,7 @@ func (c *Cosmos) copyClaudeConfig(ctx context.Context, envID string) error {
 		}
 	}
 	config["projects"] = map[string]any{
-		workdir: project,
+		c.Workdir: project,
 	}
 
 	f.Close()

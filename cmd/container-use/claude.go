@@ -1,9 +1,10 @@
 package main
 
 import (
+	"log/slog"
 	"os"
 
-	"github.com/dagger/container-use/cosmos"
+	"github.com/dagger/container-use/internal/cosmos"
 	"github.com/spf13/cobra"
 )
 
@@ -67,7 +68,9 @@ func runClaude(cmd *cobra.Command, args []string) error {
 	}
 
 	c := cosmos.Cosmos{
+		Workdir: repoPath,
 		SnapshotCallback: func(string) error {
+			slog.Info("snapshot callback")
 			return nil
 		},
 	}
