@@ -33,12 +33,12 @@ EOF
 RUN useradd -ms /bin/bash cosmos
 USER cosmos
 #COPY --chown=cosmos:cosmos container-use-proxy-linux /usr/local/bin/container-use-proxy
-#COPY --from=proxy-builder --chown=cosmos:cosmos --link /container-use-proxy /usr/local/bin/container-use-proxy
+COPY --from=proxy-builder --chown=cosmos:cosmos /container-use-proxy /usr/local/bin/container-use-proxy
 # Create .claude directory for Claude's config
 RUN mkdir ~/.claude
 # Set proxy environment variable so manual Claude invocations also use the proxy
 ENV ANTHROPIC_BASE_URL=http://localhost:8080
-# No ports exposed - proxy connects to host manager
+EXPOSE 8042
 ENTRYPOINT ["/usr/local/bin/container-use-proxy"]
 
 

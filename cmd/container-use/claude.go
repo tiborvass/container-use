@@ -57,10 +57,11 @@ func runClaude(cmd *cobra.Command, args []string) error {
 		claudeArgs = claudeArgs[1:]
 	}
 
-	// Resume specific environment
-	if envID != "" {
-		claudeArgs = append([]string{"--resume"}, claudeArgs...)
+	if envID == "" {
+		envID = "default"
 	}
+
+	claudeArgs = append([]string{"--resume"}, claudeArgs...)
 
 	repoPath, err := os.Getwd()
 	if err != nil {

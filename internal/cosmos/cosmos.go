@@ -18,6 +18,9 @@ import (
 
 const debug = false
 
+// Built with: docker build --progress plain --push -t tiborvass/claude-code --target claude-code -f environment/resources/Dockerfile.claude .
+const agentImage = "tiborvass/claude-code@sha256:2dde950abcc8cfb1b0cf1a40fb8b6bc7745a5d0bed7a8571ccb3feec7481e84b"
+
 // Cosmos handles one dockerized agent (e.g. Claude Code)
 type Cosmos struct {
 	Workdir          string
@@ -58,11 +61,22 @@ func (c *Cosmos) ensureDockerContainer(ctx context.Context, worktree, envID stri
 }
 
 func (c *Cosmos) createDockerContainer(ctx context.Context, worktree, envID string) error {
+	imageName := "container-use:" + envID
 	// Remove any existing container with same name
-	containerName := fmt.Sprintf("cu-%s", envID)
+	containerName := "cu-" + envID
 	exec.CommandContext(ctx, "docker", "rm", "-f", containerName).Run()
 
-	// workdir := env.State.Config.Workdir
+	out, err := exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("docker images --format '{{.Repository}}:{{.Tag}}' | grep -q %q", imageName)).CombinedOutput()
+	if err != nil {
+		if len(out) > 0 {
+			return fmt.Errorf("could not check if %q already exists: %w: %s", imageName, err, out)
+		}
+		// image does not exist
+		out, err = exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("docker pull %q && docker tag %q %q", agentImage, agentImage, imageName)).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("could not download claude code container: %w: %s", err, out)
+		}
+	}
 
 	// Build docker run command
 	args := []string{
@@ -96,7 +110,7 @@ func (c *Cosmos) createDockerContainer(ctx context.Context, worktree, envID stri
 	// Merge the Claude image
 	// TODO: check if exists already instead of reexporting
 	// env.container().ExportImage(ctx, "container-use-claude")
-	args = append(args, "container-use-claude")
+	args = append(args, imageName)
 
 	output, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
 	if err != nil {
