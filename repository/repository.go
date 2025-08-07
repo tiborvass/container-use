@@ -161,7 +161,7 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 		// config.Workdir = worktree
 		agentify = func(env *environment.Environment, container *dagger.Container) (*dagger.Container, error) {
 			socketsDir := "sockets-" + env.ID
-			claudeCodeLayer := "tiborvass/claude-code:layer@sha256:75dfdc7360f8b7624105c917264d92759063a73a44b37bdfa276ada0ab56e917"
+			claudeCodeLayer := "tiborvass/claude-code:layer@sha256:dfe5977152334c345df8ec316c20169bc6c948eaf9c80991f0872cc6fddf756c"
 
 			container = container.
 				WithExec([]string{"sh", "-c", "apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/* && apt-get clean"}).
@@ -199,6 +199,7 @@ func (r *Repository) Create(ctx context.Context, dag *dagger.Client, description
 
 			container = container.
 				WithUser("cu").
+				WithEnvVariable("CU_ENVIRONMENT_ID", env.ID).
 				// healthcheck is currently done by client binary
 				// WithExposedPort(8042, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
 				WithEntrypoint([]string{"/usr/local/bin/container-use-proxy"})

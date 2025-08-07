@@ -289,7 +289,7 @@ func (env *Environment) attachToDockerContainer(ctx context.Context, claudeArgs 
 	daggerEngineContainerID := strings.TrimSpace(string(out))
 
 	// TODO: need something more robust in case env.ID conflicts with existing IDs.
-	script := fmt.Sprintf(`dir=$(find /var/lib/dagger/worker/snapshots/snapshots -name sockets-%q -type d | head -1 | tee /tmp/debug); exec "${dir}/../usr/local/bin/container-use-proxy" "$dir"/cosmos.sock`, env.ID)
+	script := fmt.Sprintf(`env > /tmp/debug; dir=$(find /var/lib/dagger/worker/snapshots/snapshots -name sockets-%q -type d | head -1); exec "${dir}/../usr/local/bin/container-use-proxy" "$dir"/cosmos.sock`, env.ID)
 	// script := fmt.Sprintf(`echo %q > /tmp/debug`, env.ID)
 
 	args := []string{
@@ -303,6 +303,8 @@ func (env *Environment) attachToDockerContainer(ctx context.Context, claudeArgs 
 	}
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	err = cmd.Start()
 	if err != nil {
 		return fmt.Errorf("could not start cosmos proxy helper: %w: %s", err, out)

@@ -14,12 +14,11 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/dagger/container-use/internal/proxy"
 )
 
-func handleProxyMessages(ctx context.Context, managerConn net.Conn) {
+func handleProxyMessages(ctx context.Context, managerConn net.Conn) error {
 	dec := json.NewDecoder(managerConn)
 
 	for {
@@ -31,9 +30,9 @@ func handleProxyMessages(ctx context.Context, managerConn net.Conn) {
 		err := dec.Decode(&msg)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				slog.Error("Failed to decode proxy message", "error", err)
+				return fmt.Errorf("Failed to decode proxy message: %w", err)
 			}
-			return
+			return nil
 		}
 
 		slog.Info("Received proxy message", "action", msg.Action)
@@ -82,26 +81,28 @@ func proxyHelper(ctx context.Context) {
 	log.Println("exiting proxy helper")
 	return
 
-	dialer := &net.Dialer{}
-	maxRetries := 50
-	backoff := 100 * time.Millisecond
-	// var unixConn net.Conn
-	// var err error
-	for range maxRetries {
-		unixConn, err = dialer.DialContext(ctx, "unix", os.Args[1])
-		if err == nil {
-			break
+	/*
+		dialer := &net.Dialer{}
+		maxRetries := 50
+		backoff := 100 * time.Millisecond
+		// var unixConn net.Conn
+		// var err error
+		for range maxRetries {
+			unixConn, err = dialer.DialContext(ctx, "unix", os.Args[1])
+			if err == nil {
+				break
+			}
+			log.Printf("unable to connect to cosmos-manager: %v...", err)
+			time.Sleep(backoff)
 		}
-		log.Printf("unable to connect to cosmos-manager: %v...", err)
-		time.Sleep(backoff)
-	}
-	if err != nil {
-		log.Printf("failed to connect after %d seconds: %v", maxRetries*int(backoff/time.Second), err)
-	}
-	handleProxyMessages(ctx, unixConn)
-	// go io.Copy(tcpConn, unixConn)
-	// io.Copy(unixConn, tcpConn)
-	log.Println("exiting proxy helper")
+		if err != nil {
+			log.Printf("failed to connect after %d seconds: %v", maxRetries*int(backoff/time.Second), err)
+		}
+		handleProxyMessages(ctx, unixConn)
+		// go io.Copy(tcpConn, unixConn)
+		// io.Copy(unixConn, tcpConn)
+		log.Println("exiting proxy helper")
+	*/
 }
 
 func main() {
@@ -117,9 +118,11 @@ func main() {
 	}()
 
 	if os.Getenv("CU_PROXY_HELPER") != "" {
+		log.Print("proxy helper")
 		proxyHelper(ctx)
 		return
 	}
+	log.Print("main proxy")
 
 	envID := os.Getenv("CU_ENVIRONMENT_ID")
 	if envID == "" {
